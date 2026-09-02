@@ -1,0 +1,20 @@
+[Unit]
+Description=BlueHats Agent Factory (BoxLang MiniServer)
+After=network.target
+
+[Service]
+Type=simple
+# CHANGE THESE to match your instance: the deploy user, and that user's home.
+User=ubuntu
+WorkingDirectory=/home/ubuntu/BlueHats
+Environment="PATH=/home/ubuntu/.local/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/home/ubuntu/BlueHats/serve.sh
+Restart=on-failure
+RestartSec=5
+
+# No secrets in the environment here on purpose - every visitor supplies
+# their own AI provider key per request (see BuildResult's apiKey field).
+# If .env doesn't exist, serve.sh's load_env just no-ops.
+
+[Install]
+WantedBy=multi-user.target
