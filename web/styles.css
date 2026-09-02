@@ -36,6 +36,40 @@ button.ghost { background: #2c313c; }
 .steps li.active { border-color: #3b82f6; color: #d7dbe0; }
 .steps li.done { border-color: #22c55e; color: #22c55e; }
 .steps li.fail { border-color: #ef4444; color: #ef4444; }
+.steps li.skip { opacity: .45; }
+.bar {
+	height: 6px; background: #0f1115; border: 1px solid #2c313c;
+	border-radius: 999px; overflow: hidden;
+}
+.bar-fill {
+	height: 100%; width: 0%; background: #3b82f6; border-radius: 999px;
+	position: relative; overflow: hidden;
+	transition: width .3s cubic-bezier(.22, .61, .36, 1);
+}
+.bar.done .bar-fill { background: #22c55e; }
+.bar.fail .bar-fill { background: #ef4444; }
+.bar.running .bar-fill::after {
+	content: ""; position: absolute; inset: 0;
+	background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .22), transparent);
+	animation: barshimmer 1.6s linear infinite;
+}
+@keyframes barshimmer {
+	from { transform: translateX(-100%); }
+	to { transform: translateX(100%); }
+}
+.barmeta {
+	display: flex; justify-content: space-between; align-items: baseline; gap: .6rem;
+	margin: .5rem 0 .7rem; color: #8b93a1; font-size: .82rem;
+}
+.pct {
+	color: #6b7280; font-variant-numeric: tabular-nums;
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.bar-fill { transition: none; }
+	.bar.running .bar-fill::after { animation: none; }
+}
 
 #verdict { margin-top: .7rem; font-weight: 700; }
 .badge { padding: .2rem .6rem; border-radius: 999px; font-size: .8rem; }

@@ -27,10 +27,19 @@
 
 		<!-- BuildProgress -->
 		<section id="progress" class="hidden">
+			<div id="bar" class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+			     aria-valuenow="0" aria-label="Build progress">
+				<div id="bar-fill" class="bar-fill"></div>
+			</div>
+			<div class="barmeta">
+				<span id="bar-label">Starting…</span>
+				<span id="bar-pct" class="pct">0%</span>
+			</div>
 			<ol class="steps">
 				<li data-step="architect">Architect — problem → spec</li>
 				<li data-step="builder">Builder — spec → project</li>
 				<li data-step="qa">QA — bxAgents build</li>
+				<li data-step="coder">Coder — real tool bodies</li>
 			</ol>
 			<div id="verdict"></div>
 		</section>

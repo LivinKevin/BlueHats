@@ -16,6 +16,7 @@ class accessors="true" {
 	property name="builder";
 	property name="coder";
 	property name="qa";
+	property name="progress";
 
 	function init(
 		required string repoRoot,
@@ -28,17 +29,33 @@ class accessors="true" {
 		variables.builder   = new backend.agents.BuilderAgent( arguments.repoRoot );
 		variables.coder     = new backend.agents.CoderBuilderAgent( arguments.repoRoot, arguments.provider, arguments.model, arguments.bxAgentsBin );
 		variables.qa        = new backend.agents.QAAgent( arguments.repoRoot, arguments.bxAgentsBin );
+		variables.progress  = new backend.lib.ProgressReporter();
+		return this;
+	}
+
+	/**
+	 * Opt in to progress reporting for the UI's build bar. A setter rather than a
+	 * constructor argument so generate.bxs / testPipeline.bxs / api/run.bxs keep
+	 * working against the signature they already call.
+	 */
+	function withProgress( required any reporter ) {
+		variables.progress = arguments.reporter;
+		variables.coder.withProgress( arguments.reporter );
 		return this;
 	}
 
 	/** @return report struct (see assemble()) */
 	function build( required string problem, numeric maxRepairs = 1 ) {
+		variables.progress.useLayout( "llm" );
+		variables.progress.phase( "architect", "Architect — turning the problem into a spec" );
 		var spec = variables.architect.design( arguments.problem );
 		return runLoop( arguments.problem, spec, arguments.maxRepairs, true );
 	}
 
 	/** @return report struct — Builder + QA only, no LLM (also skips the agentic coder pass). */
 	function buildFromSpec( required struct spec ) {
+		variables.progress.useLayout( "spec" );
+		variables.progress.phase( "prepare", "Reading the supplied spec" );
 		var problem = arguments.spec.problem ?: "(spec supplied directly)";
 		return runLoop( problem, arguments.spec, 0, false );
 	}
@@ -51,7 +68,10 @@ class accessors="true" {
 		var attempt  = 0;
 
 		while ( true ) {
-			var built   = variables.builder.build( current );
+			variables.progress.phase( "builder", "Builder — rendering the project files" );
+			var built = variables.builder.build( current );
+
+			variables.progress.phase( "qa", "QA — running bxAgents build" );
 			var verdict = variables.qa.test( built.dir );
 
 			// Best-effort: try to upgrade the honest stubs BuilderAgent just wrote into
@@ -59,6 +79,7 @@ class accessors="true" {
 			// spend), and only once the structural QA above already passes - no point
 			// asking the coder to fix a spec/template problem it didn't cause.
 			if ( arguments.useCoder && verdict.verdict == "PASS" ) {
+				variables.progress.phase( "coder", "Coder — writing real tool implementations" );
 				verdict = variables.coder.implement( current, built.dir );
 			}
 
@@ -71,10 +92,12 @@ class accessors="true" {
 			} );
 
 			if ( verdict.verdict == "PASS" || attempt >= arguments.maxRepairs ) {
+				variables.progress.phase( "finalize", "Packaging the generated project" );
 				return assemble( arguments.problem, current, built, verdict, attempts );
 			}
 
 			attempt++;
+			variables.progress.repair( attempt );
 			current = variables.architect.redesign( arguments.problem, current, verdict.checkLog );
 		}
 	}

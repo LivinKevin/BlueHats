@@ -20,7 +20,7 @@ class accessors="true" {
 
 	/** @return struct - a spec ready for BuilderAgent.build() */
 	function design( required string problem ) {
-		var spec = coerce( aiChat( buildPrompt( arguments.problem ), chatParams(), chatOptions() ) );
+		var spec = requestValidSpec( buildPrompt( arguments.problem ) );
 		spec.problem = arguments.problem;
 		return spec;
 	}
@@ -39,12 +39,33 @@ class accessors="true" {
 			Return a corrected JSON object. Keep tool/param names simple identifiers.
 			Output ONLY the JSON.";
 
-		var spec = coerce( aiChat( prompt, chatParams(), chatOptions() ) );
+		var spec = requestValidSpec( prompt );
 		spec.problem = arguments.problem;
 		return spec;
 	}
 
 	// ---------------------------------------------------------------- internals
+
+	/**
+	 * Call the LLM for a spec, retrying if the reply doesn't match the expected
+	 * top-level AgentSpec shape - occasionally the model returns something shaped
+	 * like a single tools[] entry instead of the full object. This is a transient
+	 * formatting slip rather than a schema misunderstanding, so a fresh attempt
+	 * reliably self-corrects; a caller that exhausts every attempt gets the last
+	 * (possibly still malformed) response back, same as before this existed.
+	 */
+	private function requestValidSpec( required string prompt, numeric maxAttempts = 3 ) {
+		var spec = {};
+		for ( var i = 1; i <= arguments.maxAttempts; i++ ) {
+			spec = coerce( aiChat( arguments.prompt, chatParams(), chatOptions() ) );
+			if ( isValidSpec( spec ) ) return spec;
+		}
+		return spec;
+	}
+
+	private function isValidSpec( required struct spec ) {
+		return arguments.spec.keyExists( "tools" ) && isArray( arguments.spec.tools ) && arguments.spec.tools.len() > 0;
+	}
 
 	private function chatParams() {
 		return len( variables.model ) ? { model: variables.model } : {};

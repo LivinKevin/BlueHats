@@ -19,26 +19,131 @@ function setStep(step, state) {
 	});
 }
 
+/*
+==========================
+	Progress Bar
+==========================
+*/
+
+const CHIP_ORDER = ["architect", "builder", "qa", "coder"];
+const PHASE_CHIP = { architect: "architect", builder: "builder", qa: "qa", coder: "coder" };
+
+const isSkipped = (step) => {
+	const li = document.querySelector(`.steps li[data-step="${step}"]`);
+	return !!li && li.classList.contains("skip");
+};
+
+function markPhase(phase) {
+	const idx = CHIP_ORDER.indexOf(PHASE_CHIP[phase]);
+	if (idx < 0) return;
+	CHIP_ORDER.forEach((s, i) => {
+		if (isSkipped(s)) return; // setStep() clobbers className, which would drop .skip
+		if (i < idx) setStep(s, "done");
+		else if (i === idx) setStep(s, "active");
+	});
+}
+
+const bar = {
+	shown: 0, target: 0, ceiling: 90, anim: null, poll: null, misses: 0,
+
+	reset() {
+		this.stop();
+		this.shown = 0; this.target = 0; this.ceiling = 90; this.misses = 0;
+		$("bar").className = "bar";
+		$("bar-label").textContent = "Starting…";
+		this.paint();
+	},
+
+	start(buildId) {
+		$("bar").classList.add("running");
+		this.anim = setInterval(() => this.step(), 120);
+		setTimeout(() => this.startPolling(buildId), 600);
+	},
+
+	step() {
+		const before = Math.round(this.shown);
+		if (this.target - this.shown > 0.15) {
+			this.shown += (this.target - this.shown) * 0.12;          // ease toward truth
+		} else if (this.shown < this.ceiling) {
+			this.shown = Math.max(this.shown, this.target);
+			this.shown += Math.max(0.01, (this.ceiling - this.shown) * 0.006);
+		}
+		this.shown = Math.min(this.shown, Math.max(this.ceiling - 0.3, 0));
+		if (Math.round(this.shown) !== before) this.paint();
+	},
+
+	paint() {
+		const pct = Math.min(100, Math.max(0, this.shown));
+		$("bar-fill").style.width = pct.toFixed(1) + "%";
+		$("bar-pct").textContent = Math.round(pct) + "%";
+		$("bar").setAttribute("aria-valuenow", String(Math.round(pct)));
+	},
+
+	setFromServer(rec) {
+		if (!rec || rec.state === "unknown") return;
+		if (typeof rec.percent === "number") this.target = Math.max(rec.percent, this.shown);
+		if (typeof rec.ceiling === "number" && rec.ceiling > 0) this.ceiling = rec.ceiling;
+		if (rec.label) $("bar-label").textContent = rec.label;
+		if (rec.phase) markPhase(rec.phase);
+	},
+
+	startPolling(buildId) {
+		if (!this.anim) return; // already finished
+		this.poll = setInterval(() => {
+			fetch(`/api/progress.bxs?id=${encodeURIComponent(buildId)}`, { cache: "no-store" })
+				.then((r) => (r.ok ? r.json() : null))
+				.then((rec) => { if (rec) { this.misses = 0; this.setFromServer(rec); } })
+				.catch(() => { if (++this.misses >= 3) this.stopPolling(); });
+		}, 1200);
+	},
+
+	stopPolling() { clearInterval(this.poll); this.poll = null; },
+
+	stop() { this.stopPolling(); clearInterval(this.anim); this.anim = null; },
+
+	finish(ok) {
+		this.stop();
+		this.target = this.ceiling = this.shown = 100;
+		$("bar").classList.remove("running");
+		$("bar").classList.add(ok ? "done" : "fail");
+		this.paint();
+		return new Promise((resolve) => setTimeout(resolve, 380));
+	},
+};
+
+function newBuildId() {
+	const raw = (self.crypto && crypto.randomUUID)
+		? crypto.randomUUID()
+		: `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+	return raw.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 64);
+}
+
 async function build() {
 	const btn = $("build");
 	btn.disabled = true;
 	show("progress");
-	["architect", "builder", "qa"].forEach((s) => setStep(s, ""));
+	CHIP_ORDER.forEach((s) => setStep(s, ""));
+	bar.reset();
+	$("verdict").innerHTML = "";
 
 	const payload = {
 		provider: $("provider").value.trim(),
 		model: $("model").value.trim(),
 	};
-	if ($("specMode").checked) {
+	const specMode = $("specMode").checked;
+	if (specMode) {
 		try { payload.spec = JSON.parse($("specInput").value); }
 		catch { alert("spec is not valid JSON"); btn.disabled = false; return; }
-		setStep("architect", "done");
+		setStep("architect", "skip");
+		setStep("coder", "skip");
 	} else {
 		payload.prompt = $("prompt").value.trim();
 		if (!payload.prompt) { btn.disabled = false; return; }
 		setStep("architect", "active");
 	}
-	setStep("builder", "active");
+
+	payload.buildId = newBuildId();
+	bar.start(payload.buildId);
 
 	let report;
 	try {
@@ -49,24 +154,31 @@ async function build() {
 		});
 		report = await res.json();
 	} catch (e) {
+		await bar.finish(false);
 		setStep("builder", "fail");
 		$("verdict").innerHTML = `<span class="err">request failed: ${esc(e.message)}</span>`;
 		btn.disabled = false;
 		return;
+	} finally {
+		bar.stop();
 	}
 
 	btn.disabled = false;
 
 	if (report.error) {
+		await bar.finish(false);
 		setStep("architect", "fail");
 		$("verdict").innerHTML = `<span class="err">${esc(report.error)}</span><pre>${esc(report.detail || "")}${esc(report.stack || "")}</pre>`;
 		return;
 	}
 
-	setStep("architect", "done");
-	setStep("builder", "done");
+	CHIP_ORDER.forEach((s) => { if (!isSkipped(s)) setStep(s, "done"); });
 	setStep("qa", report.success ? "done" : "fail");
 	currentSlug = report.slug;
+
+	// Let the bar land on 100 before the results appear underneath it.
+	$("bar-label").textContent = report.success ? "Done" : "Finished with errors";
+	await bar.finish(report.success);
 
 	$("verdict").innerHTML = report.success
 		? `<span class="badge pass">PASS</span> ${esc(report.slug)}`

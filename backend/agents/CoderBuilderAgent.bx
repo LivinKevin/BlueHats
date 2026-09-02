@@ -19,12 +19,15 @@
  *     reading THIS machine's own local state (no third-party service involved)
  *   - a clearly labeled "needs a real API key" stub, when it isn't
  */
+import bxModules.bxai.models.middleware.AiMiddlewareResult;
+
 class accessors="true" {
 
 	property name="repoRoot"    type="string";
 	property name="provider"    type="string";
 	property name="model"       type="string";
 	property name="bxAgentsBin" type="string";
+	property name="progress";
 
 	function init(
 		required string repoRoot,
@@ -36,6 +39,13 @@ class accessors="true" {
 		variables.provider    = arguments.provider;
 		variables.model       = arguments.model;
 		variables.bxAgentsBin = arguments.bxAgentsBin;
+		variables.progress    = new backend.lib.ProgressReporter();
+		return this;
+	}
+
+	/** @see backend/AgentFactory.bx withProgress() */
+	function withProgress( required any reporter ) {
+		variables.progress = arguments.reporter;
 		return this;
 	}
 
@@ -45,9 +55,15 @@ class accessors="true" {
 	 * @return { checkPass, verdict, checkLog } - same shape as QAAgent.test()
 	 */
 	function implement( required struct spec, required string projectDir, numeric maxTurns = 16 ) {
+		var specTools = arguments.spec.tools ?: [];
+		if ( !isArray( specTools ) || specTools.isEmpty() ) {
+			var qa = new backend.agents.QAAgent( variables.repoRoot, variables.bxAgentsBin );
+			return qa.test( arguments.projectDir );
+		}
+
 		var toolsDir = arguments.projectDir & "/tools";
 		var backup   = {};
-		for ( var t in arguments.spec.tools ) {
+		for ( var t in specTools ) {
 			var f = toolsDir & "/" & t.name & ".bx";
 			backup[ f ] = fileExists( f ) ? fileRead( f ) : "";
 		}
@@ -139,13 +155,56 @@ BoxLang syntax notes (this has already burned people - follow precisely):
   var lines = output.split( '\\r\\n' );
 ";
 
+		// ---------------------------------------------------------------------------
+		// Per-turn progress for the UI's build bar.
+		//
+		// beforeLLMCall fires once per agent turn - including turns where the model only
+		// reasons and calls no tool - so it is a truer turn counter than hooking the
+		// tools would be. This is the longest phase of a build by far, so it is the one
+		// place granular ticks are worth wiring.
+		//
+		// Two non-obvious constraints:
+		//   - The locals are hoisted because a struct-literal closure cannot capture
+		//     `arguments`; `turn` is a struct so the closure can mutate it by reference.
+		//   - Each hook swallows its own errors AND returns a real continue() result.
+		//     bx-ai logs a throwing hook and then RETHROWS it (AiBaseRequest
+		//     .fireMiddleware), and StructMiddlewareAdapter's hooks are typed to return
+		//     AiMiddlewareResult - so either a throw or a null return here would take
+		//     the whole build down with it. Progress must never be able to do that.
+		// ---------------------------------------------------------------------------
+		var maxT     = arguments.maxTurns;
+		var reporter = variables.progress;
+		var turn     = { n: 0 };
+
+		var progressMiddleware = {
+			beforeLLMCall : ( context ) => {
+				try {
+					turn.n++;
+					reporter.tick( turn.n / maxT, "Coder — turn " & turn.n & " of " & maxT );
+				} catch ( any ignored ) {}
+				return AiMiddlewareResult::continue();
+			},
+			beforeToolCall : ( context ) => {
+				try {
+					var toolName = arguments.context.toolName ?: "";
+					reporter.note(
+						toolName == "runProject"
+							? "Coder — re-checking with bxAgents build"
+							: "Coder — " & ( len( toolName ) ? toolName : "working" )
+					);
+				} catch ( any ignored ) {}
+				return AiMiddlewareResult::continue();
+			}
+		};
+
 		var agent = aiAgent(
 			name         = "ToolImplementer",
 			description  = "Fills in real tool bodies for a generated BxAgents project, or honestly flags what needs a real external API.",
 			instructions = instructions,
 			model        = len( variables.provider ) ? aiModel( provider: variables.provider, params: ( len( variables.model ) ? { model: variables.model } : {} ) ) : aiModel(),
 			tools        = tools,
-			params       = { max_tokens: 4000 }
+			params       = { max_tokens: 4000 },
+			middleware   = progressMiddleware
 		);
 
 		agent.run(

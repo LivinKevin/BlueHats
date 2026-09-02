@@ -1,0 +1,32 @@
+/**
+ * GET /api/progress.bxs?id=<buildId>
+ *
+ * Reports how far along a running build is, for the UI's progress bar. Written
+ * by backend/lib/ProgressReporter.bx from inside the long-running POST
+ * /api/build.bxs, on a different request thread than this one.
+ *
+ * a GET is hit roughly once a second for the entire length of a build that is already busy 
+ * shelling out to `bxAgents build`, so it must not compete for real work.
+ *
+ * ALWAYS returns HTTP 200, never 404. An unknown id is reported as
+ * state: "unknown", which the client treats exactly like "no data yet, keep
+ * trickling", so "the build hasn't reported in yet" and "this server has never
+ * heard of you" collapse into one client code path, which is what keeps the
+ * degradation story simple.
+ */
+bx:header name="Content-Type" value="application/json";
+bx:header name="Cache-Control" value="no-store";
+
+id  = ( url.id ?: "" ).reReplace( "[^A-Za-z0-9_-]", "", "all" );
+out = { "state": "unknown", "percent": 0 };
+
+try {
+	if ( len( id ) && structKeyExists( application, "progress" ) ) {
+		record = new backend.lib.ProgressStore().get( application.progress, id );
+		if ( !record.isEmpty() ) {
+			out = record;
+		}
+	}
+} catch ( any ignored ) {}
+
+writeOutput( jsonSerialize( out ) );

@@ -16,6 +16,19 @@ factory  = new backend.AgentFactory(
 	bxAgentsBin = server.system.environment.BXAGENTS_BIN ?: "bxAgents"
 );
 
+// Progress reporting for the UI's build bar. Entirely optional.
+// if len(buildId) === 0, it just leaves the factory with its default reporter and the build runs exactly as before.
+// The client polls what this writes via GET /api/progress.bxs.
+buildId  = ( body.buildId ?: "" ).reReplace( "[^A-Za-z0-9_-]", "", "all" ).left( 64 );
+reporter = new backend.lib.ProgressReporter();
+try {
+	if ( len( buildId ) ) {
+		new backend.lib.ProgressStore().sweep( application.progress );
+		reporter = new backend.lib.ProgressReporter( application.progress, buildId );
+		factory.withProgress( reporter );
+	}
+} catch ( any ignored ) {}
+
 try {
 	if ( !isNull( body.spec ) && isStruct( body.spec ) ) {
 		report = factory.buildFromSpec( body.spec );
@@ -26,8 +39,10 @@ try {
 		writeOutput( jsonSerialize( { "error": "provide 'prompt' or 'spec'" } ) );
 		abort;
 	}
+	reporter.finish( report.success ?: false );
 	writeOutput( jsonSerialize( report ) );
 } catch ( any e ) {
+	reporter.fail( e.message );
 	bx:header statusCode=500;
 	writeOutput( jsonSerialize( { "error": e.message, "detail": e.detail ?: "" } ) );
 }
