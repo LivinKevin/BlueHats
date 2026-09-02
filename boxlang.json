@@ -14,10 +14,10 @@
 				"provider": "openrouter",
 
 				"defaultParams": {
-					// openrouter/free routes to a rotating set of free models. Pin a
-					// specific one for consistency once you know what works, e.g.
-					// "meta-llama/llama-3.3-70b-instruct".
-					"model": "openrouter/free",
+					// Pinned instead of "openrouter/free" (a rotating pool of free models)
+					// after that pool returned an empty response mid-demo and crashed
+					// bx-ai's parser. Still free on OpenRouter, but consistent.
+					"model": "meta-llama/llama-3.3-70b-instruct",
 					"max_tokens": 2000,
 					"temperature": 0.2
 				},
