@@ -1,0 +1,29 @@
+/**
+ * BuilderAgent - AgentSpec -> a runnable BX Agents project on disk.
+ *
+ * The build itself is deterministic templating (backend/lib/Renderer.bx): the
+ * spec fully determines the output, so there is no LLM step here and nothing to
+ * hallucinate. The templates are the thing that was tested once and now always
+ * produces valid BoxLang.
+ *
+ * (Stretch: an "agentic" mode where an aiAgent with the backend/tools/* file
+ *  tools fills in real tool bodies. Not on the default path.)
+ */
+class accessors="true" {
+
+	property name="renderer";
+
+	function init( required string repoRoot ) {
+		variables.renderer = new backend.lib.Renderer( arguments.repoRoot );
+		return this;
+	}
+
+	/**
+	 * @spec   The AgentSpec from ArchitectAgent.
+	 * @return { slug, dir, files[] }
+	 */
+	function build( required struct spec ) {
+		return variables.renderer.render( arguments.spec );
+	}
+
+}

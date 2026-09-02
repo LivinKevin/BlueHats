@@ -1,0 +1,7 @@
+bx:header name="Content-Type" value="application/json";
+writeOutput( jsonSerialize( {
+	"ok"       : true,
+	"service"  : "agent-factory",
+	"repoRoot" : application.repoRoot ?: "?",
+	"time"     : now().toString()
+} ) );

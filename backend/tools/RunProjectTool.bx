@@ -1,0 +1,26 @@
+/**
+ * RunProjectTool - runs `boxlang check` + the offline mock run on a project and
+ * returns the verdict. Wraps backend/agents/QAAgent.bx so the agentic Builder
+ * can test its own output mid-generation.
+ */
+class accessors="true" {
+
+	property name="qa";
+	property name="projectDir" type="string";
+
+	function init( required string repoRoot, required string projectDir, string boxlangBin = "boxlang" ) {
+		variables.qa         = new backend.agents.QAAgent( arguments.repoRoot, arguments.boxlangBin );
+		variables.projectDir = arguments.projectDir;
+		return this;
+	}
+
+	function toTool() {
+		return aiTool(
+			"runProject",
+			"Run `boxlang check` and an offline mock run on the current project. "
+			& "Returns a JSON verdict: checkPass, mockPass, verdict, and log tails.",
+			() => jsonSerialize( variables.qa.test( variables.projectDir ) )
+		);
+	}
+
+}

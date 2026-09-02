@@ -1,0 +1,24 @@
+/**
+ * CapabilityTool - lets an agent (the stretch "agentic Builder") ask what bx-ai
+ * building blocks exist, so it doesn't invent BIFs.
+ */
+class {
+
+	function toTool() {
+		return aiTool(
+			"listCapabilities",
+			"List the BoxLang AI building blocks available when generating an agent "
+			& "project: BIFs, memory types, and provider names.",
+			() => jsonSerialize( {
+				"bifs"        : [ "aiChat", "aiAgent", "aiTool", "aiMemory", "aiModel",
+				                  "aiEmbed", "aiDocuments", "aiImage", "aiWebSearch" ],
+				"memoryTypes" : [ "window", "summary", "file", "session", "cache", "hybrid" ],
+				"providers"   : [ "openrouter", "openai", "claude", "gemini", "groq",
+				                  "deepseek", "mistral", "ollama", "mock" ],
+				"toolShape"   : "aiTool( name, description, ( param1, param2 ) => { return result; } )"
+				                & ".describeParam1( ""...""  )"
+			} )
+		);
+	}
+
+}

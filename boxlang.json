@@ -1,0 +1,41 @@
+{
+	// --------------------------------------------------------------------------
+	// Project-local BoxLang config. bx-ai reads modules.bxai.settings from here.
+	// Loaded via the bx.ps1 / bx.sh wrappers (they pass --bx-config); the raw
+	// `boxlang` CLI does NOT auto-load a project boxlang.json.
+	// --------------------------------------------------------------------------
+	"modules": {
+		"bxai": {
+			"settings": {
+				// Default provider. The hackathon most likely hands out OpenRouter keys
+				// (one key -> many models). Switch to "claude" / "openai" / "gemini" / ...
+				// to match whatever key you were given, or override per call:
+				//   aiChat( "hi", {}, { provider: "claude" } )
+				"provider": "openrouter",
+
+				"defaultParams": {
+					// openrouter/free routes to a rotating set of free models. Pin a
+					// specific one for consistency once you know what works, e.g.
+					// "meta-llama/llama-3.3-70b-instruct".
+					"model": "openrouter/free",
+					"max_tokens": 2000,
+					"temperature": 0.2
+				},
+
+				// Per-provider overrides used when you pass provider: "<name>".
+				"providers": {
+					"claude": { "params": { "model": "claude-sonnet-4-20250514" } },
+					"openai": { "params": { "model": "gpt-4o" } }
+				},
+
+				"timeout": 90,
+
+				// Flip on while debugging to see the raw request/response.
+				"logRequestToConsole": false,
+				"logResponseToConsole": false,
+
+				"returnFormat": "single"
+			}
+		}
+	}
+}

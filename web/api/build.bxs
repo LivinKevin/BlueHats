@@ -1,0 +1,33 @@
+bx:header name="Content-Type" value="application/json";
+
+try {
+	body = jsonDeserialize( getHTTPRequestData().content ?: "{}" );
+} catch ( any e ) {
+	bx:header statusCode=400;
+	writeOutput( jsonSerialize( { "error": "invalid JSON body" } ) );
+	abort;
+}
+
+repoRoot = application.repoRoot;
+factory  = new backend.AgentFactory(
+	repoRoot   = repoRoot,
+	provider   = body.provider ?: "",
+	model      = body.model    ?: "",
+	boxlangBin = server.system.environment.BOXLANG_BIN ?: "boxlang"
+);
+
+try {
+	if ( !isNull( body.spec ) && isStruct( body.spec ) ) {
+		report = factory.buildFromSpec( body.spec );
+	} else if ( !isNull( body.prompt ) && len( trim( body.prompt ) ) ) {
+		report = factory.build( body.prompt, val( body.maxRepairs ?: 1 ) );
+	} else {
+		bx:header statusCode=400;
+		writeOutput( jsonSerialize( { "error": "provide 'prompt' or 'spec'" } ) );
+		abort;
+	}
+	writeOutput( jsonSerialize( report ) );
+} catch ( any e ) {
+	bx:header statusCode=500;
+	writeOutput( jsonSerialize( { "error": e.message, "detail": e.detail ?: "" } ) );
+}

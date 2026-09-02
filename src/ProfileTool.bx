@@ -1,0 +1,109 @@
+/**
+ * ProfileTool - BoxLang bridge to profiler/runProfile.py
+ *
+ * profile()  -> runs the Python measurement engine, returns the parsed report struct
+ * toTool()   -> the same thing wrapped as an aiTool() for aiAgent() / aiChat()
+ *
+ * Uses java.lang.ProcessBuilder directly (BoxLang Java interop) so we control
+ * argv, the working directory, and stream reading precisely.
+ */
+class accessors="true" {
+
+	property name="projectRoot" type="string";
+	property name="pythonBin"   type="string" default="python";
+
+	/**
+	 * @projectRoot Absolute path to the repo root (the folder containing /profiler).
+	 */
+	function init( required string projectRoot, string pythonBin = "python" ) {
+		variables.projectRoot = arguments.projectRoot;
+		variables.pythonBin   = arguments.pythonBin;
+		return this;
+	}
+
+	/**
+	 * Profile one target file.
+	 *
+	 * @targetFile Path to a .py file exposing solution(x) and optionally make_input(n),
+	 *             relative to projectRoot or absolute.
+	 * @sizes      Array or comma-list of input sizes, e.g. [1000,2000,4000] or "1000,2000,4000".
+	 * @func       Function name inside the target (default "solution").
+	 * @repeats    Timing repeats per size (default 5).
+	 * @timeout    Per-size subprocess timeout in seconds (default 15).
+	 *
+	 * @return struct - the JSON report from runProfile.py, or { error: "..." } on failure.
+	 */
+	function profile(
+		required string targetFile,
+		required any sizes,
+		string func = "solution",
+		numeric repeats = 5,
+		numeric timeout = 15
+	) {
+		// Accept an array, "1000,2000", or even "[1000, 2000]" from an LLM.
+		var sizeList = isArray( arguments.sizes ) ? arguments.sizes.toList() : toString( arguments.sizes );
+		sizeList     = sizeList.reReplace( "[\[\]\s]", "", "all" );
+		var script   = variables.projectRoot & "/profiler/runProfile.py";
+
+		// Every element must be a java String or ProcessBuilder's array copy fails.
+		var argv = [
+			variables.pythonBin, script,
+			"--target",  arguments.targetFile,
+			"--func",    arguments.func,
+			"--sizes",   sizeList,
+			"--repeats", arguments.repeats,
+			"--timeout", arguments.timeout
+		].map( ( x ) => toString( x ) );
+
+		try {
+			var pb = new java:java.lang.ProcessBuilder( argv );
+			pb.directory( new java:java.io.File( variables.projectRoot ) );
+			pb.redirectErrorStream( false );
+
+			var proc   = pb.start();
+			var out    = new java:java.lang.String( proc.getInputStream().readAllBytes(), "UTF-8" );
+			var err    = new java:java.lang.String( proc.getErrorStream().readAllBytes(), "UTF-8" );
+			// Overall guard: sizes * timeout, plus slack for interpreter startup.
+			var exited = proc.waitFor( ( sizeList.listLen() + 1 ) * arguments.timeout + 20, createObject( "java", "java.util.concurrent.TimeUnit" ).SECONDS );
+
+			if ( !exited ) {
+				proc.destroyForcibly();
+				return { "error": "runProfile.py timed out", "argv": argv.toList( " " ) };
+			}
+			if ( proc.exitValue() != 0 ) {
+				return { "error": "runProfile.py exited " & proc.exitValue(), "stderr": err };
+			}
+			return jsonDeserialize( out );
+		} catch ( any e ) {
+			return { "error": e.message, "detail": e.detail ?: "" };
+		}
+	}
+
+	/**
+	 * The profiler as an aiTool() the agent can call. Parameter names are read
+	 * from the closure signature; .describe<Param>() documents each for the LLM.
+	 */
+	function toTool() {
+		return aiTool(
+			"profile_complexity",
+			"Empirically measure the time and memory (space) complexity of a Python function "
+			& "by running it across increasing input sizes. Returns measured runtime, peak "
+			& "memory, fitted complexity labels per axis, and which axis dominates.",
+			( targetFile, sizes, func ) => jsonSerialize( profile(
+				targetFile = targetFile,
+				sizes      = sizes,
+				func       = ( isNull( func ) || !len( func ) ) ? "solution" : func
+			) )
+		)
+		.describeTargetFile(
+			"Path to a .py file, relative to the project root, that defines solution(x) and "
+			& "optionally make_input(n). Example: profiler/examples/fib.py"
+		)
+		.describeSizes(
+			"Comma-separated increasing input sizes to benchmark, e.g. 1000,2000,4000,8000. "
+			& "Keep values small (e.g. 20,24,28,30) for recursion-heavy code."
+		)
+		.describeFunc( "Optional function name inside the target file. Defaults to 'solution'." );
+	}
+
+}

@@ -1,0 +1,90 @@
+/**
+ * AgentFactory - the orchestrator.
+ *
+ *   problem  --Architect-->  spec  --Builder-->  project  --QA-->  verdict
+ *                             ^                                       |
+ *                             +--------------- redesign --------------+   (<= maxRepairs)
+ *
+ * build( prompt )        full pipeline (needs a provider key for the Architect step)
+ * buildFromSpec( spec )  skip the Architect — Builder + QA only (no key needed;
+ *                        used by tests and by the frontend's "edit spec" flow)
+ */
+class accessors="true" {
+
+	property name="repoRoot" type="string";
+	property name="architect";
+	property name="builder";
+	property name="qa";
+
+	function init(
+		required string repoRoot,
+		string provider   = "",
+		string model      = "",
+		string boxlangBin = "boxlang"
+	) {
+		variables.repoRoot  = arguments.repoRoot;
+		variables.architect = new backend.agents.ArchitectAgent( arguments.provider, arguments.model );
+		variables.builder   = new backend.agents.BuilderAgent( arguments.repoRoot );
+		variables.qa        = new backend.agents.QAAgent( arguments.repoRoot, arguments.boxlangBin );
+		return this;
+	}
+
+	/** @return report struct (see assemble()) */
+	function build( required string problem, numeric maxRepairs = 1 ) {
+		var spec = variables.architect.design( arguments.problem );
+		return runLoop( arguments.problem, spec, arguments.maxRepairs );
+	}
+
+	/** @return report struct — Builder + QA only, no LLM. */
+	function buildFromSpec( required struct spec ) {
+		var problem = arguments.spec.problem ?: "(spec supplied directly)";
+		return runLoop( problem, arguments.spec, 0 );
+	}
+
+	// ---------------------------------------------------------------- internals
+
+	private function runLoop( string problem, struct spec, numeric maxRepairs ) {
+		var attempts = [];
+		var current  = arguments.spec;
+		var attempt  = 0;
+
+		while ( true ) {
+			var built   = variables.builder.build( current );
+			var verdict = variables.qa.test( built.dir );
+
+			attempts.append( {
+				"attempt"   : attempt,
+				"slug"      : built.slug,
+				"checkPass" : verdict.checkPass,
+				"mockPass"  : verdict.mockPass,
+				"verdict"   : verdict.verdict,
+				"checkLog"  : verdict.checkLog,
+				"mockLog"   : verdict.mockLog
+			} );
+
+			if ( verdict.verdict == "PASS" || attempt >= arguments.maxRepairs ) {
+				return assemble( arguments.problem, current, built, verdict, attempts );
+			}
+
+			attempt++;
+			var feedback = verdict.checkPass ? verdict.mockLog : verdict.checkLog;
+			current = variables.architect.redesign( arguments.problem, current, feedback );
+		}
+	}
+
+	private function assemble( string problem, struct spec, struct built, struct verdict, array attempts ) {
+		return {
+			"problem"    : arguments.problem,
+			"success"    : arguments.verdict.verdict == "PASS",
+			"slug"       : arguments.built.slug,
+			"spec"       : arguments.spec,
+			"projectDir" : arguments.built.dir,
+			"files"      : arguments.built.files.map( ( p ) => ({
+				"path"    : getFileFromPath( p ),
+				"content" : fileRead( p )
+			}) ),
+			"attempts"   : arguments.attempts
+		};
+	}
+
+}

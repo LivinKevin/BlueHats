@@ -1,0 +1,160 @@
+/**
+ * Renderer - turns an AgentSpec struct into a runnable BX Agents project on disk.
+ *
+ * Deterministic. No LLM. Every bit of free-form text from the spec is escaped
+ * into a valid BoxLang string literal before it touches a template.
+ *
+ * Used by backend/agents/BuilderAgent.bx.
+ */
+class accessors="true" {
+
+	property name="repoRoot"  type="string";
+	property name="templates" type="string";
+
+	function init( required string repoRoot ) {
+		variables.repoRoot  = arguments.repoRoot;
+		variables.templates = arguments.repoRoot & "/backend/templates";
+		return this;
+	}
+
+	/**
+	 * @spec      Struct: { agentName, role, instructions, tools[], examplePrompts[],
+	 *                      slug?, provider?, model?, problem? }
+	 * @outDir    Where projects are written (default <repoRoot>/generated).
+	 * @return    { slug, dir, files[] }
+	 */
+	function render( required struct spec, string outDir = variables.repoRoot & "/generated" ) {
+		var s   = normalize( arguments.spec );
+		var dir = arguments.outDir & "/" & s.slug;
+		directoryCreate( dir, true, true );
+
+		var files = [];
+		files.append( write( dir & "/run.bxs",      renderRun( s ) ) );
+		files.append( write( dir & "/boxlang.json", renderConfig( s ) ) );
+		files.append( write( dir & "/README.md",    renderReadme( s ) ) );
+		files.append( write( dir & "/spec.json",    jsonSerialize( s, "true" ) ) );
+
+		return { "slug": s.slug, "dir": dir, "files": files };
+	}
+
+	// ---------------------------------------------------------------- internals
+
+	private function normalize( struct spec ) {
+		var s = duplicate( arguments.spec );
+		s.agentName      = trim( s.agentName ?: "Generated Agent" );
+		s.role           = trim( s.role ?: s.agentName );
+		s.instructions   = trim( s.instructions ?: "You are a helpful assistant. Be concise and accurate." );
+		s.problem        = trim( s.problem ?: "(not recorded)" ).reReplace( "\s+", " ", "all" );
+		s.provider       = trim( s.provider ?: "openrouter" );
+		s.model          = trim( s.model ?: "openrouter/free" );
+		s.tools          = s.tools ?: [];
+		s.examplePrompts = s.examplePrompts ?: [];
+		if ( isNull( s.slug ) || !len( trim( s.slug ) ) ) {
+			s.slug = slugify( s.agentName );
+		}
+		s.tools = s.tools.map( ( t ) => {
+			return {
+				"name"        : sanitizeIdent( t.name ?: "tool" ),
+				"description" : trim( t.description ?: "" ),
+				"params"      : ( t.params ?: [] ).map( ( p ) => ({
+					"name"        : sanitizeIdent( p.name ?: "arg" ),
+					"description" : trim( p.description ?: "" )
+				}) ),
+				"mockReturn"  : trim( t.mockReturn ?: ( "mock result from " & ( t.name ?: "tool" ) ) )
+			};
+		} );
+		return s;
+	}
+
+	private function renderRun( struct s ) {
+		var toolDefs = arguments.s.tools.map( ( t ) => renderTool( t ) ).toList( char(10) & char(10) );
+		var toolList = arguments.s.tools.map( ( t ) => t.name ).toList( ", " );
+		var prompts  = "[ " & arguments.s.examplePrompts.map( ( p ) => bxStr( p ) ).toList( ", " ) & " ]";
+
+		return load( "run.bxs.tmpl" )
+			.replace( "@@TOOL_DEFS@@",       toolDefs,                          "all" )
+			.replace( "@@TOOL_LIST@@",       toolList,                          "all" )
+			.replace( "@@AGENT_VAR@@",       "agent",                           "all" )
+			.replace( "@@AGENT_NAME@@",      arguments.s.agentName,             "all" )
+			.replace( "@@ROLE@@",            bxStr( arguments.s.role ),         "all" )
+			.replace( "@@INSTRUCTIONS@@",    bxStr( arguments.s.instructions ), "all" )
+			.replace( "@@EXAMPLE_PROMPTS@@", prompts,                           "all" )
+			.replace( "@@PROBLEM@@",         arguments.s.problem,               "all" )
+			.replace( "@@SLUG@@",            arguments.s.slug,                  "all" );
+	}
+
+	private function renderTool( struct t ) {
+		var params   = arguments.t.params.map( ( p ) => p.name ).toList( ", " );
+		var describe = arguments.t.params.map( ( p ) =>
+			".describe" & ucFirst( p.name ) & "( " & bxStr( p.description ) & " )"
+		).toList( "" );
+
+		return load( "tool-snippet.tmpl" )
+			.replace( "@@NAME@@",           arguments.t.name,                "all" )
+			.replace( "@@DESCRIPTION@@",    bxStr( arguments.t.description ), "all" )
+			.replace( "@@PARAMS@@",         params,                          "all" )
+			.replace( "@@BODY@@",           bxStr( arguments.t.mockReturn ),  "all" )
+			.replace( "@@DESCRIBE_CALLS@@", describe,                        "all" );
+	}
+
+	private function renderConfig( struct s ) {
+		return load( "boxlang.json.tmpl" )
+			.replace( "@@PROVIDER@@", arguments.s.provider, "all" )
+			.replace( "@@MODEL@@",    arguments.s.model,    "all" )
+			.replace( "@@SLUG@@",     arguments.s.slug,     "all" );
+	}
+
+	private function renderReadme( struct s ) {
+		var rows = "| Tool | Params | Description |" & char(10) & "| --- | --- | --- |" & char(10);
+		rows &= arguments.s.tools.map( ( t ) =>
+			"| `" & t.name & "` | " & ( t.params.len() ? t.params.map( ( p ) => "`" & p.name & "`" ).toList( ", " ) : "—" )
+			& " | " & t.description & " |"
+		).toList( char(10) );
+
+		return load( "README.md.tmpl" )
+			.replace( "@@AGENT_NAME@@", arguments.s.agentName, "all" )
+			.replace( "@@PROBLEM@@",    arguments.s.problem,   "all" )
+			.replace( "@@ROLE_PLAIN@@", arguments.s.role,      "all" )
+			.replace( "@@TOOL_TABLE@@", rows,                  "all" )
+			.replace( "@@SLUG@@",       arguments.s.slug,      "all" );
+	}
+
+	// ---------------------------------------------------------------- helpers
+
+	private function load( string name ) {
+		return fileRead( variables.templates & "/" & arguments.name );
+	}
+
+	private function write( string path, string content ) {
+		fileWrite( arguments.path, arguments.content );
+		return arguments.path;
+	}
+
+	/**
+	 * Escape an arbitrary string into a BoxLang double-quoted literal.
+	 * In .bx strings, "##" is a literal '#' and "####" is a literal '##',
+	 * so this doubles every hash to neutralise interpolation.
+	 */
+	private function bxStr( any value ) {
+		var v = toString( arguments.value ?: "" );
+		v = v.replace( '"', '""', "all" );
+		v = v.replace( "##", "####", "all" );
+		return '"' & v & '"';
+	}
+
+	private function slugify( string s ) {
+		return lCase( trim( arguments.s ) )
+			.reReplace( "[^a-z0-9]+", "-", "all" )
+			.reReplace( "(^-+|-+$)", "", "all" );
+	}
+
+	private function sanitizeIdent( string s ) {
+		var out = trim( arguments.s ).reReplace( "[^A-Za-z0-9_]", "", "all" );
+		return len( out ) ? out : "x";
+	}
+
+	private function ucFirst( string s ) {
+		return len( arguments.s ) ? ( uCase( left( arguments.s, 1 ) ) & right( arguments.s, len( arguments.s ) - 1 ) ) : arguments.s;
+	}
+
+}

@@ -1,0 +1,19 @@
+/**
+ * Smoke test: is bx-ai wired to a provider + key?
+ * Run:  boxlang src/smoke.bxs
+ */
+try {
+	response = aiChat( "Reply with exactly this text and nothing else: bx-ai online" )
+	println( "OK  -> " & response )
+} catch ( any e ) {
+	println( "FAIL -> " & e.message )
+	if ( !isNull( e.detail ) && len( e.detail ) ) {
+		println( "       " & e.detail )
+	}
+	println( "" )
+	println( "Checklist:" )
+	println( "  1. module installed?   ls ~/.boxlang/modules   (expect bx-ai)" )
+	println( "  2. .env created?        cp .env.example .env  and fill in ONE provider key" )
+	println( "  3. provider match?      'provider' in boxlang.json == the key you set in .env" )
+	println( "  4. run via the wrapper: .\bx.ps1 src\smoke.bxs   (loads .env + boxlang.json)" )
+}

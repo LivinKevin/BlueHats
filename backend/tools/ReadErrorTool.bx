@@ -1,0 +1,29 @@
+/**
+ * ReadErrorTool - returns the most recent validation output for the project, so
+ * the agentic Builder can read its own compile/run errors and fix them.
+ *
+ * Backed by a shared struct the orchestrator updates after each QA run.
+ */
+class accessors="true" {
+
+	property name="state" type="struct";
+
+	function init( required struct state ) {
+		variables.state = arguments.state;   // { lastCheckLog, lastMockLog, lastVerdict }
+		return this;
+	}
+
+	function toTool() {
+		return aiTool(
+			"readErrors",
+			"Return the most recent `boxlang check` and mock-run output for the "
+			& "project, so you can see what to fix.",
+			() => jsonSerialize( {
+				"verdict"  : variables.state.lastVerdict ?: "none yet",
+				"checkLog" : variables.state.lastCheckLog ?: "",
+				"mockLog"  : variables.state.lastMockLog ?: ""
+			} )
+		);
+	}
+
+}

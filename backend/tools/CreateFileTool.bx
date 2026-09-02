@@ -1,0 +1,32 @@
+/**
+ * CreateFileTool - writes a file into a generated project folder.
+ * For the stretch "agentic Builder" mode where an aiAgent assembles the project
+ * itself instead of the deterministic Renderer.
+ */
+class accessors="true" {
+
+	property name="projectDir" type="string";
+
+	function init( required string projectDir ) {
+		variables.projectDir = arguments.projectDir;
+		directoryCreate( arguments.projectDir, true, true );
+		return this;
+	}
+
+	function toTool() {
+		return aiTool(
+			"createFile",
+			"Write a text file into the project being generated. Overwrites if it exists.",
+			( relativePath, content ) => {
+				var safe = relativePath.reReplace( "\.\.[\\/]", "", "all" );
+				var full = variables.projectDir & "/" & safe;
+				directoryCreate( getDirectoryFromPath( full ), true, true );
+				fileWrite( full, content ?: "" );
+				return "wrote " & safe & " (" & len( content ?: "" ) & " bytes)";
+			}
+		)
+		.describeRelativePath( "Path inside the project, e.g. 'run.bxs' or 'tools/SearchTool.bx'." )
+		.describeContent( "Full file contents." );
+	}
+
+}

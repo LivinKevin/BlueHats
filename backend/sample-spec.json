@@ -1,0 +1,32 @@
+{
+	"problem": "Create an agent that reviews my application's logs and identifies unusual behavior.",
+	"agentName": "Log Anomaly Investigator",
+	"role": "Investigates application logs and surfaces unusual or suspicious behaviour with supporting evidence.",
+	"instructions": "You are a log-analysis agent.\n- Use searchLogs to pull relevant log lines before drawing conclusions.\n- Use summarizeWindow to characterise a time range.\n- Separate facts (what the logs show) from inference (what you think it means).\n- Always cite the log lines that support a finding.",
+	"provider": "openrouter",
+	"model": "openrouter/free",
+	"tools": [
+		{
+			"name": "searchLogs",
+			"description": "Search application logs for lines matching a text or regex query.",
+			"params": [
+				{ "name": "query", "description": "Text or regular expression to match against log lines." },
+				{ "name": "limit", "description": "Maximum number of matching lines to return." }
+			],
+			"mockReturn": "12 lines matched: [ERROR] db timeout x9, [WARN] slow query x3 (mock)"
+		},
+		{
+			"name": "summarizeWindow",
+			"description": "Summarise log volume and error rates for a time window.",
+			"params": [
+				{ "name": "since", "description": "Start of the window, e.g. '2026-09-01T18:00'." },
+				{ "name": "until", "description": "End of the window." }
+			],
+			"mockReturn": "Window had 4210 lines, 3.1% errors, spike at 18:47 (mock)"
+		}
+	],
+	"examplePrompts": [
+		"What unusual behaviour happened in the last hour?",
+		"Is there any sign of a brute-force login attempt today?"
+	]
+}

@@ -1,0 +1,20 @@
+/**
+ * No-API-key test of the deterministic half: BuilderAgent + QAAgent via
+ * AgentFactory.buildFromSpec(), using backend/sample-spec.json.
+ *
+ * Run:  ./bx.ps1 backend/testPipeline.bxs
+ */
+root = getDirectoryFromPath( getCurrentTemplatePath() ).reReplace( "[\\/]backend[\\/]$", "" );
+spec = jsonDeserialize( fileRead( root & "/backend/sample-spec.json" ) );
+
+factory = new backend.AgentFactory( repoRoot = root, boxlangBin = "C:\boxlang\bin\boxlang.bat" );
+report  = factory.buildFromSpec( spec );
+
+println( "success    : " & report.success );
+println( "slug       : " & report.slug );
+println( "projectDir : " & report.projectDir );
+println( "files      : " & report.files.map( ( f ) => f.path ).toList( ", " ) );
+println( "" );
+for ( a in report.attempts ) {
+	println( "attempt " & a.attempt & "  check=" & a.checkPass & "  mock=" & a.mockPass & "  -> " & a.verdict );
+}

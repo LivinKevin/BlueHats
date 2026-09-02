@@ -1,0 +1,20 @@
+/**
+ * MiniServer application. Registers a /backend mapping so the API endpoints in
+ * web/api/*.bxs can do `new backend.AgentFactory()` etc.
+ */
+class {
+
+	variables.repoRoot = getCanonicalPath( getDirectoryFromPath( getCurrentTemplatePath() ) & ".." );
+
+	this.name             = "agentFactory";
+	this.sessionManagement = false;
+	this.mappings = {
+		"/backend" : variables.repoRoot & "/backend"
+	};
+
+	function onRequestStart() {
+		application.repoRoot = variables.repoRoot;
+		return true;
+	}
+
+}

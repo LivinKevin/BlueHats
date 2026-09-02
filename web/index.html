@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Agent Factory</title>
+	<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+	<header>
+		<h1>⚙️ Agent Factory</h1>
+		<span class="sub">describe a problem → get a runnable BX Agents project</span>
+	</header>
+
+	<main>
+		<!-- AgentPromptPage -->
+		<section id="prompt-panel">
+			<textarea id="prompt" rows="3" placeholder="Create an agent that reviews my application logs and identifies unusual behavior"></textarea>
+			<div class="row">
+				<input id="provider" placeholder="provider (optional, e.g. claude)">
+				<input id="model" placeholder="model (optional)">
+				<label class="chk"><input type="checkbox" id="specMode"> spec mode (paste JSON, no LLM)</label>
+				<button id="build">Build Agent</button>
+			</div>
+			<textarea id="specInput" rows="8" class="hidden" placeholder='{ "agentName": "...", "role": "...", "instructions": "...", "tools": [], "examplePrompts": [] }'></textarea>
+		</section>
+
+		<!-- BuildProgress -->
+		<section id="progress" class="hidden">
+			<ol class="steps">
+				<li data-step="architect">Architect — problem → spec</li>
+				<li data-step="builder">Builder — spec → project</li>
+				<li data-step="qa">QA — check + mock run</li>
+			</ol>
+			<div id="verdict"></div>
+		</section>
+
+		<div class="grid">
+			<!-- BlueprintView -->
+			<section id="blueprint" class="hidden">
+				<h2>Blueprint</h2>
+				<div id="blueprint-body"></div>
+			</section>
+
+			<!-- Files -->
+			<section id="files" class="hidden">
+				<h2>Generated files</h2>
+				<div id="file-tabs" class="tabs"></div>
+				<pre id="file-content"></pre>
+			</section>
+		</div>
+
+		<!-- AgentPlayground -->
+		<section id="playground" class="hidden">
+			<h2>Playground</h2>
+			<button id="runMock">Run (mock — offline)</button>
+			<pre id="run-output"></pre>
+		</section>
+
+		<section id="attempts" class="hidden">
+			<h2>Attempts</h2>
+			<pre id="attempts-body"></pre>
+		</section>
+	</main>
+
+	<script src="app.js"></script>
+</body>
+</html>

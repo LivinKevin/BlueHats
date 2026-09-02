@@ -1,0 +1,98 @@
+/**
+ * ArchitectAgent - natural-language problem statement -> typed AgentSpec.
+ *
+ * This is the ONLY place an LLM writes anything, and it only does structured
+ * extraction (not code), so it is the low-risk use of the model.
+ *
+ *   "Create an agent that reviews my app logs and flags unusual behavior"
+ *        -> { agentName, role, instructions, memoryType, tools[], examplePrompts[] }
+ */
+class accessors="true" {
+
+	property name="provider" type="string" default="";
+	property name="model"    type="string" default="";
+
+	function init( string provider = "", string model = "" ) {
+		variables.provider = arguments.provider;
+		variables.model    = arguments.model;
+		return this;
+	}
+
+	/** @return struct - a spec ready for BuilderAgent.build() */
+	function design( required string problem ) {
+		var spec = coerce( aiChat( buildPrompt( arguments.problem ), chatParams(), chatOptions() ) );
+		spec.problem = arguments.problem;
+		return spec;
+	}
+
+	/** Re-derive a spec after the generated project failed validation. */
+	function redesign( required string problem, required struct previousSpec, required string errorOutput ) {
+		var prompt = buildPrompt( arguments.problem ) & "
+
+			Your previous answer produced a project that FAILED validation.
+			Previous JSON:
+			" & jsonSerialize( arguments.previousSpec ) & "
+
+			Validator output:
+			" & arguments.errorOutput.left( 1500 ) & "
+
+			Return a corrected JSON object. Keep tool/param names simple identifiers.
+			Output ONLY the JSON.";
+
+		var spec = coerce( aiChat( prompt, chatParams(), chatOptions() ) );
+		spec.problem = arguments.problem;
+		return spec;
+	}
+
+	// ---------------------------------------------------------------- internals
+
+	private function chatParams() {
+		return len( variables.model ) ? { model: variables.model } : {};
+	}
+
+	private function chatOptions() {
+		var o = { returnFormat: "json" };
+		if ( len( variables.provider ) ) o.provider = variables.provider;
+		return o;
+	}
+
+	private function buildPrompt( string problem ) {
+		return "
+			You design BoxLang AI agents. Given a problem, output a JSON object that
+			describes ONE agent that solves it. Output ONLY the JSON — no prose, no code fences.
+
+			Schema:
+			{
+			  ""agentName"": string, 2-4 words, Title Case,
+			  ""role"": string, one sentence describing what the agent does,
+			  ""instructions"": string, 3-6 short imperative lines separated by \n,
+			                   referencing the tool names by name,
+			  ""memoryType"": one of ""window"", ""summary"", ""file"" (use ""window"" unless the
+			                 problem clearly needs long-term recall),
+			  ""tools"": array of 2-4 objects:
+			     {
+			       ""name"": camelCase identifier (letters/digits only, starts with a letter),
+			       ""description"": one sentence, written for the LLM that will call it,
+			       ""params"": array of 0-3 { ""name"": camelCase identifier, ""description"": string },
+			       ""mockReturn"": a short, realistic-looking fake result string for offline testing
+			     },
+			  ""examplePrompts"": array of 2-3 realistic user prompts this agent should handle
+			}
+
+			Problem: " & arguments.problem;
+	}
+
+	/** Accept a struct, or a string that contains a JSON object. */
+	private function coerce( any raw ) {
+		if ( isStruct( arguments.raw ) ) return arguments.raw;
+
+		var text  = toString( arguments.raw );
+		var start = text.find( "{" );
+		var stop  = text.reverse().find( "}" );
+		if ( start && stop ) {
+			text = text.mid( start, text.len() - start - stop + 2 );
+		}
+		return jsonDeserialize( text );
+	}
+
+}

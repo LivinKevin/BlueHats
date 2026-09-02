@@ -1,0 +1,57 @@
+/**
+ * Agent Factory CLI (same pipeline as the web API).
+ *
+ *   ./bx.ps1 generate.bxs "Create an agent that reviews my app logs and flags unusual behavior"
+ *   ./bx.ps1 generate.bxs --provider=claude "Build a research agent that cites its sources"
+ *   ./bx.ps1 generate.bxs --spec=backend/sample-spec.json          (no API key needed)
+ *
+ * Writes a runnable BX Agents project to generated/<slug>/ and reports validation.
+ */
+root = getDirectoryFromPath( getCurrentTemplatePath() ).reReplace( "[\\/]$", "" );
+args = cliGetArgs();
+
+provider = args.options.provider ?: "";
+model    = args.options.model ?: "";
+specFile = args.options.spec ?: "";
+
+factory = new backend.AgentFactory(
+	repoRoot   = root,
+	provider   = provider,
+	model      = model,
+	boxlangBin = "C:\boxlang\bin\boxlang.bat"
+);
+
+if ( len( specFile ) ) {
+	spec   = jsonDeserialize( fileRead( isAbsolutePath( specFile ) ? specFile : root & "/" & specFile ) );
+	report = factory.buildFromSpec( spec );
+} else {
+	problem = args.positionals.filter( ( p ) => !p.endsWith( ".bxs" ) ).toList( " " ).trim();
+	if ( !len( problem ) ) {
+		println( "usage: ./bx.ps1 generate.bxs [--provider=x] [--model=y] ""<problem>""" );
+		println( "   or: ./bx.ps1 generate.bxs --spec=backend/sample-spec.json" );
+		return;
+	}
+	println( "Problem : " & problem );
+	println( "Building ..." & char(10) );
+	report = factory.build( problem, val( args.options.maxRepairs ?: 1 ) );
+}
+
+println( repeatString( "=", 62 ) );
+println( ( report.success ? "PASS" : "FAIL" ) & "  ->  " & report.projectDir );
+println( repeatString( "=", 62 ) );
+
+for ( a in report.attempts ) {
+	println( "attempt " & a.attempt
+		& "  check=" & ( a.checkPass ? "ok" : "FAIL" )
+		& "  mock="  & ( a.mockPass ? "ok" : "FAIL" ) );
+	if ( a.verdict != "PASS" ) {
+		var logText = a.checkPass ? a.mockLog : a.checkLog;
+		logText.listToArray( char(10) ).each( ( l ) => println( "    | " & l ) );
+	}
+}
+
+println( char(10) & "Files:" );
+report.files.each( ( f ) => println( "  generated/" & report.slug & "/" & f.path ) );
+println( char(10) & "Try it:" );
+println( "  ./bx.ps1 generated/" & report.slug & "/run.bxs --mock" );
+println( "  ./bx.ps1 generated/" & report.slug & "/run.bxs" );

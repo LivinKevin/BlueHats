@@ -1,0 +1,24 @@
+/**
+ * Exercises ProfileTool.profile() with NO API key needed.
+ * Run:  boxlang src/testProfileTool.bxs
+ */
+root = getDirectoryFromPath( getCurrentTemplatePath() ).reReplace( "[\\/]src[\\/]$", "" );
+println( "project root: " & root );
+
+pt = new src.ProfileTool( projectRoot = root );
+
+report = pt.profile(
+	targetFile = "profiler/examples/sum_squares_list.py",
+	sizes      = [ 100000, 200000, 400000, 800000 ]
+);
+
+if ( report.keyExists( "error" ) ) {
+	println( "ERROR: " & report.error );
+	println( report.stderr ?: "" );
+} else {
+	println( "time  : " & report.time_complexity.label & "  (exp " & report.time_complexity.exponent & ")" );
+	println( "space : " & report.space_complexity.label & "  (exp " & report.space_complexity.exponent & ")" );
+	println( "dominant axis: " & report.dominant_axis );
+	println( "" );
+	report.runs.each( ( r ) => println( "  n=" & r.size & "  " & numberFormat( r.time_ms, "0.0" ) & " ms  " & numberFormat( r.peak_kb, "0" ) & " KB" ) );
+}
