@@ -47,7 +47,9 @@ class accessors="true" {
 	// ---------------------------------------------------------------- internals
 
 	private function chatParams() {
-		return len( variables.model ) ? { model: variables.model } : {};
+		var p = { "max_tokens": 4000 };
+    if ( len( variables.model ) ) p.model = variables.model;
+    return p;
 	}
 
 	private function chatOptions() {
@@ -86,7 +88,11 @@ class accessors="true" {
 	private function coerce( any raw ) {
 		if ( isStruct( arguments.raw ) ) return arguments.raw;
 
-		var text  = toString( arguments.raw );
+		var text = toString( arguments.raw ).trim();
+        text = text.reReplace( "^```[a-zA-Z]*", "", "one" )
+               .reReplace( "```$", "", "one" )
+               .trim();
+
 		var start = text.find( "{" );
 		var stop  = text.reverse().find( "}" );
 		if ( start && stop ) {
