@@ -2,8 +2,9 @@
  * Validator - proves a generated project is real:
  *   check()    -> `boxlang check` passes (syntax / parse)
  *   mockRun()  -> run.bxs completes under the mock provider (no API key, no throw)
+ *   liveRun()  -> run.bxs completes against the real provider (needs an API key)
  *
- * Shells out via java.lang.ProcessBuilder. Used by backend/agents/QAAgent.bx.
+ * Shells out via java.lang.ProcessBuilder. Used by backend/agents/QAAgent.bx and web/api.
  */
 class accessors="true" {
 
@@ -32,6 +33,17 @@ class accessors="true" {
 		result.passed = result.passed
 			&& result.output contains "MOCK OK"
 			&& !( result.output contains "[agent error]" );
+		return result;
+	}
+
+	/** @return { passed:boolean, output:string } - real provider call, no --mock */
+	function liveRun( required string projectDir ) {
+		var result = run( [
+			variables.boxlangBin,
+			"--bx-config", variables.repoRoot & "/boxlang.json",
+			arguments.projectDir & "/run.bxs"
+		], 120 );
+		result.passed = result.passed && !( result.output contains "[agent error]" );
 		return result;
 	}
 

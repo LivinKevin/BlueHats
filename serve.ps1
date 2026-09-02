@@ -20,8 +20,11 @@ function Import-EnvFile($path) {
 Import-EnvFile (Join-Path $HOME ".box.env")
 Import-EnvFile (Join-Path $root ".env")
 
-# The Validator shells out to boxlang; make sure it can find it from inside the JVM.
-$env:BOXLANG_BIN = if (Get-Command boxlang -ErrorAction SilentlyContinue) { "boxlang" } else { "C:\boxlang\bin\boxlang.bat" }
+# The Validator shells out to boxlang via Java's ProcessBuilder, which can't resolve a
+# bare "boxlang" the way a shell would - it needs the actual resolved file (with
+# extension). Use whatever PATH resolves to, falling back to the default bvm install path.
+$boxlangCmd = Get-Command boxlang -ErrorAction SilentlyContinue
+$env:BOXLANG_BIN = if ($boxlangCmd) { $boxlangCmd.Source } else { "C:\boxlang\bin\boxlang.bat" }
 
 $ms = if (Get-Command boxlang-miniserver -ErrorAction SilentlyContinue) { "boxlang-miniserver" } else { "C:\boxlang\bin\boxlang-miniserver.bat" }
 

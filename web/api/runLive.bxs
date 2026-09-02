@@ -1,0 +1,30 @@
+bx:header name="Content-Type" value="application/json";
+
+try {
+	body = jsonDeserialize( getHTTPRequestData().content ?: "{}" );
+} catch ( any e ) {
+	bx:header statusCode=400;
+	writeOutput( jsonSerialize( { "error": "invalid JSON body" } ) );
+	abort;
+}
+
+slug = ( body.slug ?: "" ).reReplace( "[^A-Za-z0-9_-]", "", "all" );
+if ( !len( slug ) ) {
+	bx:header statusCode=400;
+	writeOutput( jsonSerialize( { "error": "provide 'slug'" } ) );
+	abort;
+}
+
+dir = application.repoRoot & "/generated/" & slug;
+if ( !directoryExists( dir ) ) {
+	bx:header statusCode=404;
+	writeOutput( jsonSerialize( { "error": "no generated project '" & slug & "'" } ) );
+	abort;
+}
+
+validator = new backend.lib.Validator(
+	application.repoRoot,
+	server.system.environment.BOXLANG_BIN ?: "boxlang"
+);
+result = validator.liveRun( dir );
+writeOutput( jsonSerialize( { "passed": result.passed, "output": result.output } ) );

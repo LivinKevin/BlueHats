@@ -9,6 +9,7 @@ $("specMode").addEventListener("change", (e) => {
 
 $("build").addEventListener("click", build);
 $("runMock").addEventListener("click", runMock);
+$("runLive").addEventListener("click", runLive);
 
 let currentSlug = null;
 
@@ -135,6 +136,24 @@ async function runMock() {
 		const v = await res.json();
 		$("run-output").textContent =
 			`verdict: ${v.verdict}\ncheck: ${v.checkPass}   mock: ${v.mockPass}\n\n--- mock run ---\n${v.mockLog || ""}`;
+	} catch (e) {
+		$("run-output").textContent = "request failed: " + e.message;
+	}
+}
+
+async function runLive() {
+	if (!currentSlug) return;
+	$("run-output").textContent = "calling the real provider… (can take up to a minute)";
+	try {
+		const res = await fetch("/api/runLive.bxs", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ slug: currentSlug }),
+		});
+		const v = await res.json();
+		$("run-output").textContent = v.error
+			? `error: ${v.error}`
+			: `passed: ${v.passed}\n\n--- live run ---\n${v.output || ""}`;
 	} catch (e) {
 		$("run-output").textContent = "request failed: " + e.message;
 	}
