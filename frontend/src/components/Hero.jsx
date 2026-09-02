@@ -8,12 +8,6 @@ function newBuildId() {
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
-const circles = [
-  { top: '10%', right: '78%', size: 180, opacity: 0.55, delay: 0 },
-  { top: '30%', right: '69%', size: 180, opacity: 0.6, delay: 0.15 },
-  { top: '20%', right: '40%', size: 180, opacity: 0.85, delay: 0.3 },
-]
-
 function Hero() {
   const [prompt, setPrompt] = useState('')
   const [apiKey, setApiKey] = useState('')
@@ -87,29 +81,6 @@ function Hero() {
   return (
     <section className="relative flex min-h-screen flex-col items-center overflow-hidden bg-brand px-6 pb-16 pt-10 sm:px-12 md:px-20">
       {/* decorative circle cluster — positions/colors driven by the `circles` array above */}
-      <div className="pointer-events-none absolute right-0 top-0 h-72 w-72">
-        {circles.map((circle, i) => (
-          <motion.div
-            key={i}
-            className="absolute rounded-full bg-accent"
-            style={{
-              top: circle.top,
-              right: circle.right,
-              width: circle.size,
-              height: circle.size,
-              opacity: circle.opacity,
-            }}
-            animate={{ y: [0, -10, 0] }}
-            transition={{
-              duration: 4,
-              repeat: Infinity,
-              ease: 'easeInOut',
-              delay: circle.delay,
-            }}
-          />
-        ))}
-      </div>
-
       <div className="flex w-full flex-1 flex-col items-center justify-center text-center">
         <motion.h1
           initial={{ opacity: 0, y: 16 }}
