@@ -70,8 +70,6 @@ generate.bxs                CLI entry (same pipeline as the API)
 serve.ps1 / serve.sh        start MiniServer on http://127.0.0.1:8080
 miniserver.json
 generated/                  output (gitignored) - each is a standalone BxAgents project
-
-src/ + profiler/            pre-pivot reference (a hand-written profiler agent) — not built here
 ```
 
 ## Setup
