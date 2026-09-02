@@ -14,6 +14,7 @@ class accessors="true" {
 	property name="repoRoot" type="string";
 	property name="architect";
 	property name="builder";
+	property name="coder";
 	property name="qa";
 
 	function init(
@@ -25,6 +26,7 @@ class accessors="true" {
 		variables.repoRoot  = arguments.repoRoot;
 		variables.architect = new backend.agents.ArchitectAgent( arguments.provider, arguments.model );
 		variables.builder   = new backend.agents.BuilderAgent( arguments.repoRoot );
+		variables.coder     = new backend.agents.CoderBuilderAgent( arguments.repoRoot, arguments.provider, arguments.model, arguments.boxlangBin );
 		variables.qa        = new backend.agents.QAAgent( arguments.repoRoot, arguments.boxlangBin );
 		return this;
 	}
@@ -32,18 +34,18 @@ class accessors="true" {
 	/** @return report struct (see assemble()) */
 	function build( required string problem, numeric maxRepairs = 1 ) {
 		var spec = variables.architect.design( arguments.problem );
-		return runLoop( arguments.problem, spec, arguments.maxRepairs );
+		return runLoop( arguments.problem, spec, arguments.maxRepairs, true );
 	}
 
-	/** @return report struct — Builder + QA only, no LLM. */
+	/** @return report struct — Builder + QA only, no LLM (also skips the agentic coder pass). */
 	function buildFromSpec( required struct spec ) {
 		var problem = arguments.spec.problem ?: "(spec supplied directly)";
-		return runLoop( problem, arguments.spec, 0 );
+		return runLoop( problem, arguments.spec, 0, false );
 	}
 
 	// ---------------------------------------------------------------- internals
 
-	private function runLoop( string problem, struct spec, numeric maxRepairs ) {
+	private function runLoop( string problem, struct spec, numeric maxRepairs, boolean useCoder = false ) {
 		var attempts = [];
 		var current  = arguments.spec;
 		var attempt  = 0;
@@ -51,6 +53,14 @@ class accessors="true" {
 		while ( true ) {
 			var built   = variables.builder.build( current );
 			var verdict = variables.qa.test( built.dir );
+
+			// Best-effort: try to upgrade the honest stubs BuilderAgent just wrote into
+			// real implementations. Only on the LLM path (buildFromSpec() has no key to
+			// spend), and only once the structural QA above already passes - no point
+			// asking the coder to fix a spec/template problem it didn't cause.
+			if ( arguments.useCoder && verdict.verdict == "PASS" ) {
+				verdict = variables.coder.implement( current, built.dir );
+			}
 
 			attempts.append( {
 				"attempt"   : attempt,

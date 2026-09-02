@@ -1,0 +1,148 @@
+/**
+ * CoderBuilderAgent - the "stretch agentic Builder" mode mentioned in
+ * backend/agents/BuilderAgent.bx and backend/tools/*: an aiAgent equipped with
+ * setToolBody/runProject/readErrors/listCapabilities that tries to replace a
+ * generated project's stub tool bodies with real implementations. setToolBody
+ * (not the generic createFile) does the actual file edit, surgically, so the
+ * agent structurally cannot rewrite the aiAgent(...) wiring or demo run loop
+ * even if it tries.
+ *
+ * Runs AFTER BuilderAgent.build() has already written a safe, honestly-labeled
+ * project to disk. This step is strictly best-effort and can never leave the
+ * project worse than that baseline: run.bxs is backed up first, and restored if
+ * the agentic pass doesn't end with `boxlang check` passing.
+ *
+ * Two honest outcomes per tool, never a third:
+ *   - real, working BoxLang/Java code, when the tool's job is pure computation or
+ *     reading THIS machine's own local state (no third-party service involved)
+ *   - a clearly labeled "needs a real API key" stub, when it isn't
+ */
+class accessors="true" {
+
+	property name="repoRoot"   type="string";
+	property name="provider"   type="string";
+	property name="model"      type="string";
+	property name="boxlangBin" type="string";
+
+	function init(
+		required string repoRoot,
+		string provider   = "",
+		string model      = "",
+		string boxlangBin = "boxlang"
+	) {
+		variables.repoRoot   = arguments.repoRoot;
+		variables.provider   = arguments.provider;
+		variables.model      = arguments.model;
+		variables.boxlangBin = arguments.boxlangBin;
+		return this;
+	}
+
+	/**
+	 * @spec        The AgentSpec used to build the project (for tool descriptions).
+	 * @projectDir  The already-rendered project directory (from BuilderAgent.build()).
+	 * @return { checkPass, mockPass, verdict, checkLog, mockLog } - same shape as QAAgent.test()
+	 */
+	function implement( required struct spec, required string projectDir, numeric maxTurns = 16 ) {
+		var runFile = arguments.projectDir & "/run.bxs";
+		var safeBaseline = fileRead( runFile );
+
+		try {
+			runImplementationAgent( arguments.spec, arguments.projectDir, arguments.maxTurns );
+		} catch ( any e ) {
+			// Best-effort only - fall through to the QA check below, which will
+			// restore the safe baseline if this left anything broken.
+		}
+
+		var qa      = new backend.agents.QAAgent( variables.repoRoot, variables.boxlangBin );
+		var verdict = qa.test( arguments.projectDir );
+
+		if ( !verdict.checkPass ) {
+			fileWrite( runFile, safeBaseline );
+			verdict = qa.test( arguments.projectDir );
+		}
+
+		return verdict;
+	}
+
+	// ---------------------------------------------------------------- internals
+
+	private function runImplementationAgent( struct spec, string projectDir, numeric maxTurns ) {
+		var state = { lastCheckLog: "", lastMockLog: "", lastVerdict: "none yet" };
+
+		var tools = [
+			new backend.tools.SetToolBodyTool( arguments.projectDir ).toTool(),
+			new backend.tools.RunProjectTool( variables.repoRoot, arguments.projectDir, variables.boxlangBin ).toTool(),
+			new backend.tools.ReadErrorTool( state ).toTool(),
+			new backend.tools.CapabilityTool().toTool()
+		];
+
+		var toolTable = arguments.spec.tools.map( ( t ) =>
+			"- " & t.name & "(" & ( t.params ?: [] ).map( ( p ) => p.name ).toList( ", " ) & "): " & t.description
+		).toList( char( 10 ) );
+
+		var instructions = "
+You are completing a generated BoxLang AI agent project. Its run.bxs currently has
+placeholder tool bodies that all return a string starting with '[SIMULATED - no live
+data source connected yet]'. Your job is to replace as many of them as you honestly
+can with real, working code - never with more fabricated-looking data.
+
+Tools to implement:
+" & toolTable & "
+
+Rules - follow exactly:
+1. If a tool's job can be done with pure computation, or by reading THIS local
+   machine's own state (files, disk space, memory, running processes, network
+   reachability, current time, hashing, random values, string/math/date logic) using
+   BoxLang built-ins or Java interop (new java:full.Class.Name(...) /
+   createObject('java', 'full.Class.Name')) - write REAL working code for it. No call
+   to a third-party internet service is allowed in this case.
+2. If a tool fundamentally needs live data from an external paid/keyed API (weather,
+   stock prices, maps, news, search, etc.) that you have no key for - do NOT invent
+   realistic-looking numbers. Leave (or rewrite) its body to return exactly this
+   pattern, filling in the service name:
+   return '[NEEDS REAL API] This tool requires a real <ServiceName> API key, which is not configured yet.';
+3. Call listCapabilities first if you want to confirm what BoxLang AI building blocks
+   exist.
+4. Use setToolBody to update ONE tool at a time - give it the tool's exact name and
+   the plain BoxLang statements that should run inside its body (ending in a return).
+   Do not try to touch the rest of run.bxs (the aiAgent(...) wiring, the demo run
+   loop, useMock handling) - you don't have a tool for that on purpose, and you don't
+   need one: setToolBody only ever changes the inside of the one function you name.
+5. After every setToolBody call, call runProject to check your work. If checkPass is
+   false, call readErrors, fix the syntax, and try setToolBody again on that same tool.
+6. Stop once runProject reports checkPass true, or once every tool has been handled
+   (either with real code or the '[NEEDS REAL API]' message).
+
+BoxLang syntax notes (this has already burned people - follow precisely):
+- string concatenation uses '&', not '+'
+- a newline character is char(10), NOT chr(10) (chr() does not exist)
+- a literal backslash inside a double-quoted string is written as \\\\ (backslash
+  needs escaping)
+- optional/possibly-missing function params: use ( paramName ?: '' )
+- safe numeric parsing of a possibly-missing param: val( paramName ?: '' )
+- ProcessBuilder pattern for shelling out (already proven in this codebase):
+  var pb = new java:java.lang.ProcessBuilder( [ 'someCommand', 'arg1' ] );
+  pb.redirectErrorStream( true );
+  var proc = pb.start();
+  var output = new java:java.lang.String( proc.getInputStream().readAllBytes(), 'UTF-8' );
+  proc.waitFor();
+  var lines = output.split( '\\r\\n' );
+";
+
+		var agent = aiAgent(
+			name         = "ToolImplementer",
+			description  = "Fills in real tool bodies for a generated BoxLang agent project, or honestly flags what needs a real external API.",
+			instructions = instructions,
+			model        = len( variables.provider ) ? aiModel( provider: variables.provider, params: ( len( variables.model ) ? { model: variables.model } : {} ) ) : aiModel(),
+			tools        = tools,
+			params       = { max_tokens: 4000 }
+		);
+
+		agent.run(
+			"Implement the tools now, following the rules exactly. Start by reading the current run.bxs behavior via runProject if useful, then make your edits.",
+			{},
+			{ maxInteractions: arguments.maxTurns }
+		);
+	}
+
+}

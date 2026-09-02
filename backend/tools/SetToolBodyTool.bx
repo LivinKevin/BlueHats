@@ -1,0 +1,110 @@
+/**
+ * SetToolBodyTool - surgically replaces ONLY the statements inside one tool's
+ * arrow-function body in a generated run.bxs, leaving everything else in the file
+ * (other tools, the aiAgent(...) wiring, the demo run loop, useMock handling)
+ * byte-for-byte untouched.
+ *
+ * Exists because letting an agent rewrite the whole file via a generic
+ * "create/overwrite file" tool is too easy to get wrong - it tends to also rewrite
+ * the surrounding scaffolding it was told to leave alone. This tool makes that
+ * mistake structurally impossible: it finds the named tool's "( params ) => { ... }"
+ * block by brace-matching (string-literal aware, so braces inside a returned JSON
+ * string don't confuse it) and swaps only what is between the braces.
+ *
+ * For the stretch "agentic Builder" mode - see backend/agents/CoderBuilderAgent.bx.
+ */
+class accessors="true" {
+
+	property name="projectDir" type="string";
+
+	function init( required string projectDir ) {
+		variables.projectDir = arguments.projectDir;
+		return this;
+	}
+
+	function toTool() {
+		return aiTool(
+			"setToolBody",
+			"Replace ONLY the inside of one tool's arrow-function body in run.bxs. "
+			& "Everything else in the file (other tools, the aiAgent(...) call, the demo "
+			& "run loop, useMock handling) is left completely untouched - do not attempt "
+			& "to rewrite those yourself, this tool handles the surgery for you.",
+			( toolName, body ) => setBody( arguments.toolName ?: "", arguments.body ?: "" )
+		)
+		.describeToolName( "Exact tool name to update, e.g. 'getDiskSpace' - must match an existing aiTool(...) name in run.bxs." )
+		.describeBody( "The BoxLang statements that should run inside that tool's function, as plain text (not JSON-escaped) - must end in a return statement. Do not include the surrounding '( params ) => { }' wrapper, just what goes inside the braces." );
+	}
+
+	// ---------------------------------------------------------------- internals
+
+	private function setBody( required string toolName, required string body ) {
+		var path = variables.projectDir & "/run.bxs";
+		if ( !fileExists( path ) ) {
+			return "ERROR: " & path & " does not exist.";
+		}
+		var content = fileRead( path );
+
+		var nameIdx = find( '"' & arguments.toolName & '"', content );
+		if ( !nameIdx ) {
+			return "ERROR: no aiTool named '" & arguments.toolName & "' was found in run.bxs. Check the exact spelling.";
+		}
+
+		var arrowIdx = find( "=> {", content, nameIdx );
+		if ( !arrowIdx ) {
+			return "ERROR: found tool '" & arguments.toolName & "' but no '=> {' arrow-function body after it.";
+		}
+
+		var braceStart = find( "{", content, arrowIdx );
+		var closeIdx   = matchClosingBrace( content, braceStart );
+		if ( !closeIdx ) {
+			return "ERROR: could not find the matching closing brace for '" & arguments.toolName & "'. The file was not changed.";
+		}
+
+		var before = left( content, braceStart );
+		var after  = mid( content, closeIdx, len( content ) - closeIdx + 1 );
+		var indentedBody = arguments.body
+			.trim()
+			.listToArray( char( 10 ) )
+			.map( ( line ) => "		" & line )
+			.toList( char( 10 ) );
+
+		var newContent = before & char( 10 ) & indentedBody & char( 10 ) & "	" & after;
+		fileWrite( path, newContent );
+		return "OK: updated the body of '" & arguments.toolName & "'. Call runProject next to verify it.";
+	}
+
+	/** @return the 1-based index of the '}' matching the '{' at openIdx, or 0 if not found. String-literal aware. */
+	private function matchClosingBrace( required string content, required numeric openIdx ) {
+		var depth = 0;
+		var inStr = false;
+		var i     = arguments.openIdx;
+		var n     = len( arguments.content );
+
+		while ( i <= n ) {
+			var ch = mid( arguments.content, i, 1 );
+			if ( inStr ) {
+				if ( ch == '"' ) {
+					if ( mid( arguments.content, i + 1, 1 ) == '"' ) {
+						i++; // escaped "" inside a BoxLang string literal - not the end of the string
+					} else {
+						inStr = false;
+					}
+				}
+			} else {
+				if ( ch == '"' ) {
+					inStr = true;
+				} else if ( ch == "{" ) {
+					depth++;
+				} else if ( ch == "}" ) {
+					depth--;
+					if ( depth == 0 ) {
+						return i;
+					}
+				}
+			}
+			i++;
+		}
+		return 0;
+	}
+
+}
