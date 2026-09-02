@@ -1,6 +1,12 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import BuildResult from './BuildResult'
+
+function newBuildId() {
+  return typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
 
 const circles = [
   { top: '10%', right: '78%', size: 180, opacity: 0.55, delay: 0 },
@@ -10,23 +16,58 @@ const circles = [
 
 function Hero() {
   const [prompt, setPrompt] = useState('')
+  const [apiKey, setApiKey] = useState('')
+  const [keyFieldHidden, setKeyFieldHidden] = useState(false)
   const [status, setStatus] = useState('idle') // idle | building | done | error
   const [error, setError] = useState('')
   const [report, setReport] = useState(null)
+  const [progressPercent, setProgressPercent] = useState(0)
+  const [progressLabel, setProgressLabel] = useState('')
+  const pollRef = useRef(null)
+  const buildIdRef = useRef(null)
+
+  function stopPolling() {
+    if (pollRef.current) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+  }
+
+  function startPolling(buildId) {
+    stopPolling()
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/progress.bxs?id=${buildId}`)
+        const data = await res.json()
+        if (buildIdRef.current !== buildId) return
+        setProgressPercent(data.percent ?? 0)
+        setProgressLabel(data.label ?? '')
+      } catch {
+        // progress is decoration - a missed poll just waits for the next tick
+      }
+    }, 1000)
+  }
 
   async function handleSubmit(e) {
     e.preventDefault()
     if (!prompt.trim() || status === 'building') return
 
+    const buildId = newBuildId()
+    buildIdRef.current = buildId
+
     setStatus('building')
     setError('')
     setReport(null)
+    setKeyFieldHidden(true)
+    setProgressPercent(0)
+    setProgressLabel('')
+    startPolling(buildId)
 
     try {
       const res = await fetch('/api/build.bxs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, apiKey, buildId }),
       })
       const data = await res.json()
       if (!res.ok || data.error) {
@@ -34,9 +75,12 @@ function Hero() {
       }
       setReport(data)
       setStatus('done')
+      setProgressPercent(100)
     } catch (err) {
       setError(err.message)
       setStatus('error')
+    } finally {
+      stopPolling()
     }
   }
 
@@ -98,6 +142,21 @@ function Hero() {
             className="w-full rounded-full bg-muted/70 px-8 py-6 text-xl text-brand-ink placeholder-brand-ink/60 shadow-lg outline-none transition focus:ring-2 focus:ring-accent disabled:opacity-70"
           />
 
+          <input
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder="AI api key..."
+            hidden={keyFieldHidden}
+            className={`mx-auto mt-3 w-full max-w-xs rounded-full bg-muted/50 px-4 py-2 text-center text-sm text-brand-ink placeholder-brand-ink/60 outline-none transition focus:ring-2 focus:ring-accent ${keyFieldHidden ? '' : 'block'}`}
+          />
+
+          {/* invisible: with two text inputs above, the browser needs an explicit
+              submit button or Enter stops auto-submitting in either field */}
+          <button type="submit" className="hidden">
+            Submit
+          </button>
+
           <AnimatePresence>
             {status === 'building' && (
               <motion.div
@@ -107,11 +166,13 @@ function Hero() {
                 exit={{ opacity: 0 }}
                 className="mt-4 h-1 w-full overflow-hidden rounded-full bg-brand-ink/10"
               >
-                <motion.span
-                  className="block h-full w-1/3 rounded-full bg-accent"
-                  initial={{ x: '-120%' }}
-                  animate={{ x: ['-120%', '320%'] }}
-                  transition={{ duration: 1.1, repeat: Infinity, ease: 'easeInOut' }}
+                {/* width is driven by real backend progress (see /api/progress.bxs),
+                    not a fake indeterminate loop */}
+                <motion.div
+                  className="h-full rounded-full bg-accent"
+                  initial={{ width: '0%' }}
+                  animate={{ width: `${progressPercent}%` }}
+                  transition={{ duration: 0.9, ease: 'easeOut' }}
                 />
               </motion.div>
             )}
@@ -126,7 +187,7 @@ function Hero() {
                 exit={{ opacity: 0 }}
                 className="mt-3 text-sm text-brand-ink/70"
               >
-                Building your agent…
+                {progressLabel || 'Building your agent…'} · {progressPercent}%
               </motion.p>
             )}
             {status === 'error' && (

@@ -1,0 +1,69 @@
+/**
+ * ProgressStore - shared, thread-safe storage for in-flight build progress.
+ *
+ * A build runs inside one long blocking POST /api/build.bxs while the browser
+ * polls GET /api/progress.bxs on a different request thread, so the two need a
+ * meeting point that survives across requests: a java.util.concurrent.ConcurrentHashMap
+ * parked in application scope (created in web/Application.bx), keyed by build id.
+ *
+ * Thread-safety rule: records are IMMUTABLE SNAPSHOTS. A writer never mutates a
+ * struct already in the map. It builds a fresh one and put()s it wholesale, so a
+ * reader always sees a coherent record and never a half-written one. The CHM's own
+ * atomicity is then the only synchronization needed, and no lock is taken on the
+ * hot path.
+ *
+ * Written by backend/lib/ProgressReporter.bx, read by web/api/progress.bxs.
+ */
+class {
+
+	/** Store a snapshot, stamped with the time it was written. */
+	function put( required any map, required string id, required struct record ) {
+		var snapshot = duplicate( arguments.record );
+		snapshot[ "updatedAt" ] = getTickCount();
+		arguments.map.put( arguments.id, snapshot );
+		return this;
+	}
+
+	/** @return the record for this id, or an empty struct if there isn't one. */
+	struct function get( required any map, required string id ) {
+		var found = arguments.map.get( arguments.id );
+		return ( !isNull( found ) && isStruct( found ) ) ? found : {};
+	}
+
+	/**
+	 * Drop records that are finished with, so the map can't grow without bound.
+	 * Called once per build (from build.bxs), never from the polling endpoint.
+	 *
+	 * @ttlMs       Anything not touched in this long is gone (default 15 minutes).
+	 * @maxEntries  Hard cap; if still over after the TTL pass, the oldest go.
+	 */
+	function sweep( required any map, numeric ttlMs = 900000, numeric maxEntries = 50 ) {
+		var now  = getTickCount();
+		var kept = [];
+
+		// CHM iteration is weakly consistent - safe to walk while other threads write.
+		for ( var key in arguments.map.keySet().toArray() ) {
+			var rec = arguments.map.get( key );
+			if ( isNull( rec ) || !isStruct( rec ) ) {
+				arguments.map.remove( key );
+				continue;
+			}
+			if ( now - ( rec.updatedAt ?: 0 ) > arguments.ttlMs ) {
+				arguments.map.remove( key );
+				continue;
+			}
+			kept.append( { "key": key, "updatedAt": rec.updatedAt ?: 0 } );
+		}
+
+		if ( kept.len() > arguments.maxEntries ) {
+			kept.sort( ( a, b ) => compare( a.updatedAt, b.updatedAt ) );
+			var excess = kept.len() - arguments.maxEntries;
+			for ( var i = 1; i <= excess; i++ ) {
+				arguments.map.remove( kept[ i ].key );
+			}
+		}
+
+		return this;
+	}
+
+}

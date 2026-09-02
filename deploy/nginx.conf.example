@@ -1,0 +1,27 @@
+# Reverse proxy + basic abuse protection in front of the BoxLang MiniServer
+# (which stays bound to 127.0.0.1:8080, never exposed directly).
+#
+# Install: sudo cp this to /etc/nginx/sites-available/agent-factory,
+# symlink into sites-enabled, then `sudo certbot --nginx -d api.yourdomain.com`
+# to fill in the TLS block automatically.
+
+limit_req_zone $binary_remote_addr zone=agentfactory:10m rate=6r/m;
+
+server {
+	listen 80;
+	server_name api.yourdomain.com;
+
+	location / {
+		limit_req zone=agentfactory burst=3 nodelay;
+
+		proxy_pass         http://127.0.0.1:8080;
+		proxy_set_header    Host $host;
+		proxy_set_header    X-Real-IP $remote_addr;
+		proxy_set_header    X-Forwarded-For $proxy_add_x_forwarded_for;
+		proxy_set_header    X-Forwarded-Proto $scheme;
+
+		# A build can legitimately run for several minutes (the coder step is
+		# up to 16 LLM turns, each running a real bxAgents build).
+		proxy_read_timeout  10m;
+	}
+}

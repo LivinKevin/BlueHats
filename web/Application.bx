@@ -12,9 +12,34 @@ class {
 		"/backend" : variables.repoRoot & "/backend"
 	};
 
+	function onApplicationStart() {
+		application.repoRoot = variables.repoRoot;
+		application.progress = newProgressMap();
+		return true;
+	}
+
 	function onRequestStart() {
 		application.repoRoot = variables.repoRoot;
+
+		// Lazy double-checked init as well as onApplicationStart(), so a server whose
+		// application scope was created before this code existed still gets a map.
+		if ( !structKeyExists( application, "progress" ) ) {
+			lock name="agentFactory.progressInit" type="exclusive" timeout="5" {
+				if ( !structKeyExists( application, "progress" ) ) {
+					application.progress = newProgressMap();
+				}
+			}
+		}
 		return true;
+	}
+
+	/**
+	 * The shared build-progress map: a long build writes into it on its own request
+	 * thread while the browser polls /api/progress.bxs on another, so it has to be a
+	 * concurrent structure. See backend/lib/ProgressStore.bx.
+	 */
+	private function newProgressMap() {
+		return createObject( "java", "java.util.concurrent.ConcurrentHashMap" ).init();
 	}
 
 }

@@ -1,0 +1,201 @@
+/**
+ * ProgressReporter - reports where a build has got to, for the UI's progress bar.
+ *
+ * Constructed with no arguments, every method returns immediately and
+ * nothing is stored. That is deliberate; AgentFactory and
+ * CoderBuilderAgent default to an inert reporter, so the CLI entry points
+ * (generate.bxs, backend/testPipeline.bxs) and web/api/run.bxs are completely
+ * unaffected and pay nothing. Only web/api/build.bxs swaps in a live one.
+ *
+ * Two safety properties this class must never lose:
+ *
+ *   1. It cannot break a build. Every public method is wrapped in a swallowing
+ *      try/catch. Progress reporting is decoration; the build is the product.
+ *   2. The bar cannot go backwards. Every write passes through write(), which
+ *      ratchets a monotonic `floor`. Even the repair loop (which genuinely does
+ *      re-run earlier phases) only ever moves the number forwards - see repair().
+ *
+ * The record it writes is consumed by web/api/progress.bxs. `ceiling` is the field
+ * that makes the bar feel alive: it is the top of the current phase's band, and the
+ * browser trickles towards it while a phase blocks, rather than freezing on `percent`.
+ *
+ * Storage and the thread-safety contract: backend/lib/ProgressStore.bx.
+ */
+class accessors="true" {
+
+	property name="store";                     // ConcurrentHashMap, or "" when inert
+	property name="buildId"   type="string";
+	property name="layout"    type="string";   // "llm" | "spec"
+	property name="attempt"   type="numeric";
+
+	/**
+	 * Phase bands, as { start, end } percentages.
+	 *
+	 * The weights are wall-clock estimates, not equal slices: `coder` owns 35-95 on
+	 * the LLM path because it is up to 16 LLM turns, most of which shell out to a
+	 * full `bxAgents build` - easily the majority of the wait. On the spec path there
+	 * is no LLM at all, so `qa` (one bxAgents build) is the long pole instead.
+	 */
+	static {
+		BANDS = {
+			"llm" : {
+				"architect" : { "start":  2, "end": 15 },
+				"builder"   : { "start": 15, "end": 20 },
+				"qa"        : { "start": 20, "end": 35 },
+				"coder"     : { "start": 35, "end": 95 },
+				"finalize"  : { "start": 95, "end": 99 }
+			},
+			"spec" : {
+				"prepare"   : { "start":  2, "end": 10 },
+				"builder"   : { "start": 10, "end": 30 },
+				"qa"        : { "start": 30, "end": 95 },
+				"finalize"  : { "start": 95, "end": 99 }
+			}
+		};
+		// The span the repeatable phases live in - used by the repair() remap.
+		LOOP_LO = 2;
+		LOOP_HI = 95;
+	}
+
+	function init( any store = "", string buildId = "" ) {
+		variables.store   = arguments.store;
+		variables.buildId = arguments.buildId;
+		variables.enabled = !isSimpleValue( arguments.store ) && len( trim( arguments.buildId ) );
+
+		variables.layout  = "llm";
+		variables.attempt = 0;
+		variables.floor   = 0;          // never decreases
+		variables.band    = { "start": 0, "end": 2 };
+		variables.phase   = "starting";
+
+		// Identity remap: raw band values pass through untouched until repair() runs.
+		variables.mapLo   = static.LOOP_LO;
+		variables.mapHi   = static.LOOP_HI;
+
+		variables.storeHelper = new backend.lib.ProgressStore();
+		return this;
+	}
+
+	/** "llm" for build(), "spec" for buildFromSpec(). */
+	function useLayout( required string name ) {
+		if ( !variables.enabled ) return this;
+		try {
+			variables.layout = static.BANDS.keyExists( arguments.name ) ? arguments.name : "llm";
+		} catch ( any ignored ) {}
+		return this;
+	}
+
+	/** Enter a phase: jump to the bottom of its band and aim at the top. */
+	function phase( required string name, string label = "" ) {
+		if ( !variables.enabled ) return this;
+		try {
+			var bands = static.BANDS[ variables.layout ];
+			if ( !bands.keyExists( arguments.name ) ) return this;
+
+			variables.phase = arguments.name;
+			variables.band  = {
+				"start" : remap( bands[ arguments.name ].start, arguments.name ),
+				"end"   : remap( bands[ arguments.name ].end,   arguments.name )
+			};
+			write( variables.band.start, len( arguments.label ) ? arguments.label : arguments.name );
+		} catch ( any ignored ) {}
+		return this;
+	}
+
+	/**
+	 * Advance within the current band. @fraction is 0-1 of the way through this phase.
+	 *
+	 * Capped at 0.95 of the band so a phase never numerically completes its own band
+	 * from the inside - only the next phase() call is allowed to move past it. Without
+	 * that cap, a coder run that used all 16 turns would sit on 95% while still working.
+	 */
+	function tick( required numeric fraction, string label = "" ) {
+		if ( !variables.enabled ) return this;
+		try {
+			var f    = max( 0, min( arguments.fraction, 0.95 ) );
+			var span = variables.band.end - variables.band.start;
+			write( variables.band.start + ( span * f ), arguments.label );
+		} catch ( any ignored ) {}
+		return this;
+	}
+
+	/** Update the label only - for sub-events that shouldn't move the number. */
+	function note( required string label ) {
+		if ( !variables.enabled ) return this;
+		try { write( variables.floor, arguments.label ); } catch ( any ignored ) {}
+		return this;
+	}
+
+	/**
+	 * A validation failure sent us back to the Architect.
+	 *
+	 * The phases genuinely re-run, but the bar must not rewind, so instead of
+	 * replaying the same numbers we squeeze the whole band table into the top half of
+	 * whatever room is left: attempt 1 replays into [floor, floor + (95-floor)/2],
+	 * attempt 2 into half of what remains after that, and so on. The number keeps
+	 * climbing and never reaches 95; the label carries the truth that this is a retry.
+	 */
+	function repair( required numeric attemptNumber ) {
+		if ( !variables.enabled ) return this;
+		try {
+			variables.attempt = arguments.attemptNumber;
+			variables.mapLo   = variables.floor;
+			variables.mapHi   = variables.floor + ( ( static.LOOP_HI - variables.floor ) / 2 );
+			write( variables.floor, "Repair attempt " & arguments.attemptNumber & " — redesigning the spec" );
+		} catch ( any ignored ) {}
+		return this;
+	}
+
+	function finish( boolean success = true ) {
+		if ( !variables.enabled ) return this;
+		try {
+			variables.phase = "done";
+			write( 100, arguments.success ? "Done" : "Finished with errors", "done" );
+		} catch ( any ignored ) {}
+		return this;
+	}
+
+	/** Something threw. Hold the number where it is and mark the record failed. */
+	function fail( string message = "" ) {
+		if ( !variables.enabled ) return this;
+		try {
+			write( variables.floor, len( arguments.message ) ? arguments.message : "Build failed", "error" );
+		} catch ( any ignored ) {}
+		return this;
+	}
+
+	// ---------------------------------------------------------------- internals
+
+	/**
+	 * Squeeze a raw band value into the space left by any repair attempts.
+	 * Identity until repair() moves mapLo/mapHi. The terminal phases are absolute -
+	 * "finalize" and "done" always mean the same thing however many retries happened.
+	 */
+	private numeric function remap( required numeric value, required string phaseName ) {
+		if ( arguments.phaseName == "finalize" || arguments.phaseName == "done" ) {
+			return arguments.value;
+		}
+		var rawSpan = static.LOOP_HI - static.LOOP_LO;
+		if ( rawSpan <= 0 ) return arguments.value;
+		var t = ( arguments.value - static.LOOP_LO ) / rawSpan;
+		return variables.mapLo + ( t * ( variables.mapHi - variables.mapLo ) );
+	}
+
+	/** The single writer. Ratchets `floor`, then stores an immutable snapshot. */
+	private function write( required numeric pct, string label = "", string state = "running" ) {
+		var p = max( arguments.pct, variables.floor );
+		p = min( p, 100 );
+		variables.floor = p;
+
+		variables.storeHelper.put( variables.store, variables.buildId, {
+			"buildId" : variables.buildId,
+			"phase"   : variables.phase,
+			"label"   : arguments.label,
+			"percent" : int( p ),
+			"ceiling" : int( max( variables.band.end, p ) ),
+			"state"   : arguments.state,
+			"attempt" : variables.attempt
+		} );
+	}
+
+}

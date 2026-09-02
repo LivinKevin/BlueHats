@@ -11,10 +11,12 @@ class accessors="true" {
 
 	property name="provider" type="string" default="";
 	property name="model"    type="string" default="";
+	property name="apiKey"   type="string" default="";
 
-	function init( string provider = "", string model = "" ) {
+	function init( string provider = "", string model = "", string apiKey = "" ) {
 		variables.provider = arguments.provider;
 		variables.model    = arguments.model;
+		variables.apiKey   = arguments.apiKey;
 		return this;
 	}
 
@@ -55,6 +57,7 @@ class accessors="true" {
 	private function chatOptions() {
 		var o = { returnFormat: "json" };
 		if ( len( variables.provider ) ) o.provider = variables.provider;
+		if ( len( variables.apiKey ) )   o.apiKey   = variables.apiKey;
 		return o;
 	}
 
