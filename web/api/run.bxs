@@ -24,6 +24,6 @@ if ( !directoryExists( dir ) ) {
 
 qa = new backend.agents.QAAgent(
 	application.repoRoot,
-	server.system.environment.BOXLANG_BIN ?: "boxlang"
+	server.system.environment.BXAGENTS_BIN ?: "bxAgents"
 );
 writeOutput( jsonSerialize( qa.test( dir ) ) );

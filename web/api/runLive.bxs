@@ -22,9 +22,16 @@ if ( !directoryExists( dir ) ) {
 	abort;
 }
 
+message = trim( body.message ?: "" );
+if ( !len( message ) ) {
+	specPath = dir & "/spec.json";
+	prompts  = fileExists( specPath ) ? ( jsonDeserialize( fileRead( specPath ) ).examplePrompts ?: [] ) : [];
+	message  = prompts.len() ? prompts[ 1 ] : "Hello - introduce yourself and what you can help with.";
+}
+
 validator = new backend.lib.Validator(
 	application.repoRoot,
-	server.system.environment.BOXLANG_BIN ?: "boxlang"
+	server.system.environment.BXAGENTS_BIN ?: "bxAgents"
 );
-result = validator.liveRun( dir );
-writeOutput( jsonSerialize( { "passed": result.passed, "output": result.output } ) );
+result = validator.liveRun( dir, message );
+writeOutput( jsonSerialize( { "passed": result.passed, "output": result.output, "message": message } ) );

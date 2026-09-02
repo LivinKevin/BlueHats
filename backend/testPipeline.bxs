@@ -7,7 +7,7 @@
 root = getDirectoryFromPath( getCurrentTemplatePath() ).reReplace( "[\\/]backend[\\/]$", "" );
 spec = jsonDeserialize( fileRead( root & "/backend/sample-spec.json" ) );
 
-factory = new backend.AgentFactory( repoRoot = root, boxlangBin = "C:\boxlang\bin\boxlang.bat" );
+factory = new backend.AgentFactory( repoRoot = root, bxAgentsBin = "C:\boxlang\home\bin\bxAgents.bat" );
 report  = factory.buildFromSpec( spec );
 
 println( "success    : " & report.success );
@@ -16,5 +16,5 @@ println( "projectDir : " & report.projectDir );
 println( "files      : " & report.files.map( ( f ) => f.path ).toList( ", " ) );
 println( "" );
 for ( a in report.attempts ) {
-	println( "attempt " & a.attempt & "  check=" & a.checkPass & "  mock=" & a.mockPass & "  -> " & a.verdict );
+	println( "attempt " & a.attempt & "  check=" & a.checkPass & "  -> " & a.verdict );
 }

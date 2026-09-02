@@ -26,6 +26,11 @@ Import-EnvFile (Join-Path $root ".env")
 $boxlangCmd = Get-Command boxlang -ErrorAction SilentlyContinue
 $env:BOXLANG_BIN = if ($boxlangCmd) { $boxlangCmd.Source } else { "C:\boxlang\bin\boxlang.bat" }
 
+# Same story for bxAgents - its shim isn't even on PATH by default (it lives under
+# the BoxLang home, not the bin dir PATH points at), so resolve it explicitly.
+$bxAgentsCmd = Get-Command bxAgents -ErrorAction SilentlyContinue
+$env:BXAGENTS_BIN = if ($bxAgentsCmd) { $bxAgentsCmd.Source } else { "C:\boxlang\home\bin\bxAgents.bat" }
+
 $ms = if (Get-Command boxlang-miniserver -ErrorAction SilentlyContinue) { "boxlang-miniserver" } else { "C:\boxlang\bin\boxlang-miniserver.bat" }
 
 Set-Location $root

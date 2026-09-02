@@ -1,5 +1,7 @@
 /**
- * Renderer - turns an AgentSpec struct into a runnable BX Agents project on disk.
+ * Renderer - turns an AgentSpec struct into a runnable BxAgents project on disk
+ * (https://bxagents.ai conventions: Agent.bx + instructions.md + tools/*.bx, one
+ * file per tool, each tool function annotated with @AITool).
  *
  * Deterministic. No LLM. Every bit of free-form text from the spec is escaped
  * into a valid BoxLang string literal before it touches a template.
@@ -27,12 +29,17 @@ class accessors="true" {
 		var s   = normalize( arguments.spec );
 		var dir = arguments.outDir & "/" & s.slug;
 		directoryCreate( dir, true, true );
+		directoryCreate( dir & "/tools", true, true );
 
 		var files = [];
-		files.append( write( dir & "/run.bxs",      renderRun( s ) ) );
-		files.append( write( dir & "/boxlang.json", renderConfig( s ) ) );
-		files.append( write( dir & "/README.md",    renderReadme( s ) ) );
-		files.append( write( dir & "/spec.json",    jsonSerialize( s, "true" ) ) );
+		files.append( write( dir & "/Agent.bx",        renderAgent( s ) ) );
+		files.append( write( dir & "/instructions.md", s.instructions ) );
+		for ( var t in s.tools ) {
+			files.append( write( dir & "/tools/" & t.name & ".bx", renderTool( t ) ) );
+		}
+		files.append( write( dir & "/README.md",  renderReadme( s ) ) );
+		files.append( write( dir & "/spec.json",  jsonSerialize( s, "true" ) ) );
+		files.append( write( dir & "/.gitignore", ".build/" & char( 10 ) & "dist/" & char( 10 ) & ".env" & char( 10 ) ) );
 
 		return { "slug": s.slug, "dir": dir, "files": files };
 	}
@@ -66,57 +73,36 @@ class accessors="true" {
 		return s;
 	}
 
-	private function renderRun( struct s ) {
-		var toolDefs = arguments.s.tools.map( ( t ) => renderTool( t ) ).toList( char(10) & char(10) );
-		var toolList = arguments.s.tools.map( ( t ) => t.name ).toList( ", " );
-		var prompts  = "[ " & arguments.s.examplePrompts.map( ( p ) => bxStr( p ) ).toList( ", " ) & " ]";
-
-		return load( "run.bxs.tmpl" )
-			.replace( "@@TOOL_DEFS@@",       toolDefs,                          "all" )
-			.replace( "@@TOOL_LIST@@",       toolList,                          "all" )
-			.replace( "@@AGENT_VAR@@",       "agent",                           "all" )
-			.replace( "@@AGENT_NAME@@",      arguments.s.agentName,             "all" )
-			.replace( "@@ROLE@@",            bxStr( arguments.s.role ),         "all" )
-			.replace( "@@INSTRUCTIONS@@",    bxStr( arguments.s.instructions ), "all" )
-			.replace( "@@EXAMPLE_PROMPTS@@", prompts,                           "all" )
-			.replace( "@@PROBLEM@@",         arguments.s.problem,               "all" )
-			.replace( "@@SLUG@@",            arguments.s.slug,                  "all" );
+	private function renderAgent( struct s ) {
+		return load( "agent-bx.tmpl" )
+			.replace( "@@NAME@@",        bxStr( arguments.s.agentName ), "all" )
+			.replace( "@@DESCRIPTION@@", bxStr( arguments.s.role ),      "all" )
+			.replace( "@@PROVIDER@@",    bxStr( arguments.s.provider ),  "all" )
+			.replace( "@@MODEL@@",       bxStr( arguments.s.model ),     "all" );
 	}
 
 	private function renderTool( struct t ) {
-		var params   = arguments.t.params.map( ( p ) => p.name ).toList( ", " );
-		var describe = arguments.t.params.map( ( p ) =>
-			".describe" & ucFirst( p.name ) & "( " & bxStr( p.description ) & " )"
-		).toList( "" );
+		var params = arguments.t.params.map( ( p ) => p.name ).toList( ", " );
 
-		return load( "tool-snippet.tmpl" )
-			.replace( "@@NAME@@",           arguments.t.name,                "all" )
-			.replace( "@@DESCRIPTION@@",    bxStr( arguments.t.description ), "all" )
-			.replace( "@@PARAMS@@",         params,                          "all" )
-			.replace( "@@BODY@@",           bxStr( arguments.t.mockReturn ),  "all" )
-			.replace( "@@DESCRIBE_CALLS@@", describe,                        "all" );
-	}
-
-	private function renderConfig( struct s ) {
-		return load( "boxlang.json.tmpl" )
-			.replace( "@@PROVIDER@@", arguments.s.provider, "all" )
-			.replace( "@@MODEL@@",    arguments.s.model,    "all" )
-			.replace( "@@SLUG@@",     arguments.s.slug,     "all" );
+		return load( "tool-bx.tmpl" )
+			.replace( "@@NAME@@",        arguments.t.name,                "all" )
+			.replace( "@@DESCRIPTION@@", bxStr( arguments.t.description ), "all" )
+			.replace( "@@PARAMS@@",      params,                          "all" )
+			.replace( "@@BODY@@",        bxStr( arguments.t.mockReturn ),  "all" );
 	}
 
 	private function renderReadme( struct s ) {
-		var rows = "| Tool | Params | Description |" & char(10) & "| --- | --- | --- |" & char(10);
+		var rows = "| Tool | Params | Description |" & char( 10 ) & "| --- | --- | --- |" & char( 10 );
 		rows &= arguments.s.tools.map( ( t ) =>
 			"| `" & t.name & "` | " & ( t.params.len() ? t.params.map( ( p ) => "`" & p.name & "`" ).toList( ", " ) : "—" )
 			& " | " & t.description & " |"
-		).toList( char(10) );
+		).toList( char( 10 ) );
 
 		return load( "README.md.tmpl" )
 			.replace( "@@AGENT_NAME@@", arguments.s.agentName, "all" )
 			.replace( "@@PROBLEM@@",    arguments.s.problem,   "all" )
 			.replace( "@@ROLE_PLAIN@@", arguments.s.role,      "all" )
-			.replace( "@@TOOL_TABLE@@", rows,                  "all" )
-			.replace( "@@SLUG@@",       arguments.s.slug,      "all" );
+			.replace( "@@TOOL_TABLE@@", rows,                  "all" );
 	}
 
 	// ---------------------------------------------------------------- helpers
@@ -151,10 +137,6 @@ class accessors="true" {
 	private function sanitizeIdent( string s ) {
 		var out = trim( arguments.s ).reReplace( "[^A-Za-z0-9_]", "", "all" );
 		return len( out ) ? out : "x";
-	}
-
-	private function ucFirst( string s ) {
-		return len( arguments.s ) ? ( uCase( left( arguments.s, 1 ) ) & right( arguments.s, len( arguments.s ) - 1 ) ) : arguments.s;
 	}
 
 }

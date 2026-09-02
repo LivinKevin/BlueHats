@@ -15,14 +15,15 @@ model    = args.options.model ?: "";
 specFile = args.options.spec ?: "";
 
 factory = new backend.AgentFactory(
-	repoRoot   = root,
-	provider   = provider,
-	model      = model,
-	boxlangBin = "C:\boxlang\bin\boxlang.bat"
+	repoRoot    = root,
+	provider    = provider,
+	model       = model,
+	bxAgentsBin = "C:\boxlang\home\bin\bxAgents.bat"
 );
 
 if ( len( specFile ) ) {
-	spec   = jsonDeserialize( fileRead( isAbsolutePath( specFile ) ? specFile : root & "/" & specFile ) );
+	isAbs  = reFind( "^([A-Za-z]:[\\/]|[\\/])", specFile ) > 0;
+	spec   = jsonDeserialize( fileRead( isAbs ? specFile : root & "/" & specFile ) );
 	report = factory.buildFromSpec( spec );
 } else {
 	problem = args.positionals.filter( ( p ) => !p.endsWith( ".bxs" ) ).toList( " " ).trim();
@@ -41,17 +42,13 @@ println( ( report.success ? "PASS" : "FAIL" ) & "  ->  " & report.projectDir );
 println( repeatString( "=", 62 ) );
 
 for ( a in report.attempts ) {
-	println( "attempt " & a.attempt
-		& "  check=" & ( a.checkPass ? "ok" : "FAIL" )
-		& "  mock="  & ( a.mockPass ? "ok" : "FAIL" ) );
+	println( "attempt " & a.attempt & "  check=" & ( a.checkPass ? "ok" : "FAIL" ) );
 	if ( a.verdict != "PASS" ) {
-		var logText = a.checkPass ? a.mockLog : a.checkLog;
-		logText.listToArray( char(10) ).each( ( l ) => println( "    | " & l ) );
+		a.checkLog.listToArray( char(10) ).each( ( l ) => println( "    | " & l ) );
 	}
 }
 
 println( char(10) & "Files:" );
 report.files.each( ( f ) => println( "  generated/" & report.slug & "/" & f.path ) );
 println( char(10) & "Try it:" );
-println( "  ./bx.ps1 generated/" & report.slug & "/run.bxs --mock" );
-println( "  ./bx.ps1 generated/" & report.slug & "/run.bxs" );
+println( "  cd generated/" & report.slug & " && bxAgents build && bxAgents chat" );

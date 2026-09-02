@@ -10,10 +10,10 @@ try {
 
 repoRoot = application.repoRoot;
 factory  = new backend.AgentFactory(
-	repoRoot   = repoRoot,
-	provider   = body.provider ?: "",
-	model      = body.model    ?: "",
-	boxlangBin = server.system.environment.BOXLANG_BIN ?: "boxlang"
+	repoRoot    = repoRoot,
+	provider    = body.provider ?: "",
+	model       = body.model    ?: "",
+	bxAgentsBin = server.system.environment.BXAGENTS_BIN ?: "bxAgents"
 );
 
 try {

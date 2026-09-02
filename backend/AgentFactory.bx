@@ -19,15 +19,15 @@ class accessors="true" {
 
 	function init(
 		required string repoRoot,
-		string provider   = "",
-		string model      = "",
-		string boxlangBin = "boxlang"
+		string provider    = "",
+		string model       = "",
+		string bxAgentsBin = "bxAgents"
 	) {
 		variables.repoRoot  = arguments.repoRoot;
 		variables.architect = new backend.agents.ArchitectAgent( arguments.provider, arguments.model );
 		variables.builder   = new backend.agents.BuilderAgent( arguments.repoRoot );
-		variables.coder     = new backend.agents.CoderBuilderAgent( arguments.repoRoot, arguments.provider, arguments.model, arguments.boxlangBin );
-		variables.qa        = new backend.agents.QAAgent( arguments.repoRoot, arguments.boxlangBin );
+		variables.coder     = new backend.agents.CoderBuilderAgent( arguments.repoRoot, arguments.provider, arguments.model, arguments.bxAgentsBin );
+		variables.qa        = new backend.agents.QAAgent( arguments.repoRoot, arguments.bxAgentsBin );
 		return this;
 	}
 
@@ -66,10 +66,8 @@ class accessors="true" {
 				"attempt"   : attempt,
 				"slug"      : built.slug,
 				"checkPass" : verdict.checkPass,
-				"mockPass"  : verdict.mockPass,
 				"verdict"   : verdict.verdict,
-				"checkLog"  : verdict.checkLog,
-				"mockLog"   : verdict.mockLog
+				"checkLog"  : verdict.checkLog
 			} );
 
 			if ( verdict.verdict == "PASS" || attempt >= arguments.maxRepairs ) {
@@ -77,20 +75,20 @@ class accessors="true" {
 			}
 
 			attempt++;
-			var feedback = verdict.checkPass ? verdict.mockLog : verdict.checkLog;
-			current = variables.architect.redesign( arguments.problem, current, feedback );
+			current = variables.architect.redesign( arguments.problem, current, verdict.checkLog );
 		}
 	}
 
 	private function assemble( string problem, struct spec, struct built, struct verdict, array attempts ) {
+		var projectDir = arguments.built.dir;
 		return {
 			"problem"    : arguments.problem,
 			"success"    : arguments.verdict.verdict == "PASS",
 			"slug"       : arguments.built.slug,
 			"spec"       : arguments.spec,
-			"projectDir" : arguments.built.dir,
+			"projectDir" : projectDir,
 			"files"      : arguments.built.files.map( ( p ) => ({
-				"path"    : getFileFromPath( p ),
+				"path"    : p.replace( projectDir & "/", "", "one" ),
 				"content" : fileRead( p )
 			}) ),
 			"attempts"   : arguments.attempts

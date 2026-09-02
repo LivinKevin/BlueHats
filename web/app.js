@@ -119,14 +119,14 @@ function renderAttempts(attempts) {
 	if (!attempts.length) return;
 	show("attempts");
 	$("attempts-body").textContent = attempts.map((a) =>
-		`attempt ${a.attempt}  check=${a.checkPass ? "ok" : "FAIL"}  mock=${a.mockPass ? "ok" : "FAIL"}` +
-		(a.verdict === "PASS" ? "" : `\n  ${(a.checkPass ? a.mockLog : a.checkLog || "").split("\n").join("\n  ")}`)
+		`attempt ${a.attempt}  check=${a.checkPass ? "ok" : "FAIL"}` +
+		(a.verdict === "PASS" ? "" : `\n  ${(a.checkLog || "").split("\n").join("\n  ")}`)
 	).join("\n\n");
 }
 
 async function runMock() {
 	if (!currentSlug) return;
-	$("run-output").textContent = "running…";
+	$("run-output").textContent = "running `bxAgents build`…";
 	try {
 		const res = await fetch("/api/run.bxs", {
 			method: "POST",
@@ -135,7 +135,7 @@ async function runMock() {
 		});
 		const v = await res.json();
 		$("run-output").textContent =
-			`verdict: ${v.verdict}\ncheck: ${v.checkPass}   mock: ${v.mockPass}\n\n--- mock run ---\n${v.mockLog || ""}`;
+			`verdict: ${v.verdict}\ncheck: ${v.checkPass}\n\n--- bxAgents build ---\n${v.checkLog || ""}`;
 	} catch (e) {
 		$("run-output").textContent = "request failed: " + e.message;
 	}

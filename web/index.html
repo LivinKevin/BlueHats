@@ -30,7 +30,7 @@
 			<ol class="steps">
 				<li data-step="architect">Architect — problem → spec</li>
 				<li data-step="builder">Builder — spec → project</li>
-				<li data-step="qa">QA — check + mock run</li>
+				<li data-step="qa">QA — bxAgents build</li>
 			</ol>
 			<div id="verdict"></div>
 		</section>
@@ -53,7 +53,7 @@
 		<!-- AgentPlayground -->
 		<section id="playground" class="hidden">
 			<h2>Playground</h2>
-			<button id="runMock">Run (mock — offline)</button>
+			<button id="runMock">Re-check build (free, no API key)</button>
 			<button id="runLive">Run (real LLM — uses your API key)</button>
 			<pre id="run-output"></pre>
 		</section>

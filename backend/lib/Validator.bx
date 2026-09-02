@@ -1,58 +1,38 @@
 /**
- * Validator - proves a generated project is real:
- *   check()    -> `boxlang check` passes (syntax / parse)
- *   mockRun()  -> run.bxs completes under the mock provider (no API key, no throw)
- *   liveRun()  -> run.bxs completes against the real provider (needs an API key)
+ * Validator - proves a generated BxAgents project is real:
+ *   check()   -> `bxAgents build` passes (discovery + validation + codegen)
+ *   liveRun() -> `bxAgents invoke --message=...` completes against the real
+ *                provider (needs a real API key in the environment)
  *
- * Shells out via java.lang.ProcessBuilder. Used by backend/agents/QAAgent.bx and web/api.
+ * Shells out via java.lang.ProcessBuilder. Used by backend/agents/QAAgent.bx.
  */
 class accessors="true" {
 
-	property name="repoRoot"   type="string";
-	property name="boxlangBin" type="string";
+	property name="repoRoot"    type="string";
+	property name="bxAgentsBin" type="string";
 
-	function init( required string repoRoot, string boxlangBin = "boxlang" ) {
-		variables.repoRoot   = arguments.repoRoot;
-		variables.boxlangBin = arguments.boxlangBin;
+	function init( required string repoRoot, string bxAgentsBin = "bxAgents" ) {
+		variables.repoRoot    = arguments.repoRoot;
+		variables.bxAgentsBin = arguments.bxAgentsBin;
 		return this;
 	}
 
 	/** @return { passed:boolean, output:string } */
 	function check( required string projectDir ) {
-		return run( [ variables.boxlangBin, "check", "--source", arguments.projectDir ], 60 );
+		return run( [ variables.bxAgentsBin, "build" ], 90, arguments.projectDir );
 	}
 
-	/** @return { passed:boolean, output:string } */
-	function mockRun( required string projectDir ) {
-		var result = run( [
-			variables.boxlangBin,
-			"--bx-config", variables.repoRoot & "/boxlang.json",
-			arguments.projectDir & "/run.bxs",
-			"--mock"
-		], 90 );
-		result.passed = result.passed
-			&& result.output contains "MOCK OK"
-			&& !( result.output contains "[agent error]" );
-		return result;
-	}
-
-	/** @return { passed:boolean, output:string } - real provider call, no --mock */
-	function liveRun( required string projectDir ) {
-		var result = run( [
-			variables.boxlangBin,
-			"--bx-config", variables.repoRoot & "/boxlang.json",
-			arguments.projectDir & "/run.bxs"
-		], 120 );
-		result.passed = result.passed && !( result.output contains "[agent error]" );
-		return result;
+	/** @return { passed:boolean, output:string } - a real, keyed smoke-test call */
+	function liveRun( required string projectDir, required string prompt ) {
+		return run( [ variables.bxAgentsBin, "invoke", "--message=" & arguments.prompt ], 120, arguments.projectDir );
 	}
 
 	// ---------------------------------------------------------------- internals
 
-	private function run( array argv, numeric timeout ) {
+	private function run( array argv, numeric timeout, string cwd = variables.repoRoot ) {
 		try {
 			var pb = new java:java.lang.ProcessBuilder( argv.map( ( x ) => toString( x ) ) );
-			pb.directory( new java:java.io.File( variables.repoRoot ) );
+			pb.directory( new java:java.io.File( arguments.cwd ) );
 			pb.redirectErrorStream( true );
 
 			var proc   = pb.start();

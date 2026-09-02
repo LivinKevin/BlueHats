@@ -1,0 +1,20 @@
+class extends="bxModules.bxai.models.runnables.AiAgent" {
+
+	function init() {
+		super.init(
+			name        : @@NAME@@,
+			description : @@DESCRIPTION@@,
+			model       : aiModel( provider : @@PROVIDER@@, params : { model : @@MODEL@@ } )
+		)
+		return this
+	}
+
+	// `bxAgents test` builds against this override by default (needs TestBox under
+	// tests/, see tests/box.json) - no API key or network access needed there.
+	function test() {
+		return {
+			model : "mock/mock-model"
+		};
+	}
+
+}

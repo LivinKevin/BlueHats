@@ -1,6 +1,6 @@
 /**
- * CapabilityTool - lets an agent (the stretch "agentic Builder") ask what bx-ai
- * building blocks exist, so it doesn't invent BIFs.
+ * CapabilityTool - lets an agent (the stretch "agentic Builder") ask what BxAgents
+ * / bx-ai building blocks exist, so it doesn't invent BIFs or the wrong tool shape.
  */
 class {
 
@@ -8,15 +8,17 @@ class {
 		return aiTool(
 			"listCapabilities",
 			"List the BoxLang AI building blocks available when generating an agent "
-			& "project: BIFs, memory types, and provider names.",
+			& "project: BIFs, memory types, provider names, and the BxAgents tool "
+			& "file convention.",
 			() => jsonSerialize( {
 				"bifs"        : [ "aiChat", "aiAgent", "aiTool", "aiMemory", "aiModel",
 				                  "aiEmbed", "aiDocuments", "aiImage", "aiWebSearch" ],
 				"memoryTypes" : [ "window", "summary", "file", "session", "cache", "hybrid" ],
 				"providers"   : [ "openrouter", "openai", "claude", "gemini", "groq",
 				                  "deepseek", "mistral", "ollama", "mock" ],
-				"toolShape"   : "aiTool( name, description, ( param1, param2 ) => { return result; } )"
-				                & ".describeParam1( ""...""  )"
+				"toolShape"   : "One BoxLang file per tool, under tools/<toolName>.bx, e.g.: "
+				                & "class { @AITool( ""description"" ) function toolName( param1, param2 ) { return result; } }. "
+				                & "The FILE's base name is the tool identifier the agent calls by - keep it identical to the function name."
 			} )
 		);
 	}

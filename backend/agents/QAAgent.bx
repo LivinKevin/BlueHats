@@ -1,37 +1,36 @@
 /**
- * QAAgent - tests a generated project and returns a verdict.
+ * QAAgent - tests a generated BxAgents project and returns a verdict.
  *
- *   check   : `boxlang check` (syntax / parse)
- *   mockRun : run.bxs completes under bx-ai's mock provider (no key, no throw)
+ *   check : `bxAgents build` (discovery + validation + codegen) - free, no API key.
  *
- * PASS only if both hold. On FAIL the orchestrator hands the output back to
+ * PASS only if that holds. On FAIL the orchestrator hands the output back to
  * ArchitectAgent.redesign() for another attempt.
+ *
+ * (There is no free functional smoke test in this pipeline - BxAgents' own `test`
+ * command needs TestBox installed under tests/, which needs a working `box` CLI.
+ * A real functional check is available via Validator.liveRun(), but that spends a
+ * real provider call - see AgentFactory / CoderBuilderAgent for where that's used.)
  */
 class accessors="true" {
 
 	property name="validator";
 
-	function init( required string repoRoot, string boxlangBin = "boxlang" ) {
-		variables.validator = new backend.lib.Validator( arguments.repoRoot, arguments.boxlangBin );
+	function init( required string repoRoot, string bxAgentsBin = "bxAgents" ) {
+		variables.validator = new backend.lib.Validator( arguments.repoRoot, arguments.bxAgentsBin );
 		return this;
 	}
 
 	/**
 	 * @projectDir  Absolute path to a generated project folder.
-	 * @return { checkPass, mockPass, verdict, checkLog, mockLog }
+	 * @return { checkPass, verdict, checkLog }
 	 */
 	function test( required string projectDir ) {
 		var check = variables.validator.check( arguments.projectDir );
-		var mock  = check.passed
-			? variables.validator.mockRun( arguments.projectDir )
-			: { "passed": false, "output": "skipped (check failed)" };
 
 		return {
 			"checkPass" : check.passed,
-			"mockPass"  : mock.passed,
-			"verdict"   : ( check.passed && mock.passed ) ? "PASS" : "FAIL",
-			"checkLog"  : check.output.right( 1500 ),
-			"mockLog"   : mock.output.right( 1500 )
+			"verdict"   : check.passed ? "PASS" : "FAIL",
+			"checkLog"  : check.output.right( 1500 )
 		};
 	}
 
